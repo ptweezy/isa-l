@@ -150,6 +150,7 @@ objs = \
 	bin\crc32_iscsi_01.obj \
 	bin\crc32_iscsi_by8_02.obj \
 	bin\crc32_iscsi_by16_10.obj \
+	bin\crc32_iscsi_by16_10_fused.obj \
 	bin\crc32_iscsi_avx2.obj \
 	bin\crc_multibinary.obj \
 	bin\crc64_ecma_refl_by8.obj \
@@ -186,6 +187,7 @@ objs = \
 	bin\rfc1951_lookup.obj \
 	bin\adler32_sse.obj \
 	bin\adler32_avx2_4.obj \
+	bin\adler32_avx512.obj \
 	bin\igzip_multibinary.obj \
 	bin\igzip_update_histogram_01.obj \
 	bin\igzip_update_histogram_04.obj \
