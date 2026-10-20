@@ -180,6 +180,7 @@ objs = \
 	bin\crc32_gzip_refl_by8.obj \
 	bin\crc32_gzip_refl_avx2.obj \
 	bin\crc32_gzip_refl_by16_10.obj \
+	bin\crc32_gzip_refl_by16_10_hybrid.obj \
 	bin\igzip_body.obj \
 	bin\igzip_finish.obj \
 	bin\igzip_icf_body_h1_gr_bt.obj \
