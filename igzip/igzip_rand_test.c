@@ -2630,6 +2630,10 @@ test_full_flush_pending_exit:
         free(level_buf);
         free(chunk_buf);
         free(z_buf);
+
+        return ret;
+}
+
 /*
  * Inflates every prefix of a stream that starts with a dynamic block, stateless, and checks that
  * next_in + avail_in stays at the end of the input. When the input ends inside the block header,
