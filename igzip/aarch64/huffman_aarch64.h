@@ -105,34 +105,15 @@ _compute_dist_code:
 _end_get_dist_code:
 .endm
 
-
-.macro compare_258_bytes str0:req,str1:req,match_length:req,tmp0:req,tmp1:req
-	mov	x_\match_length,0
-_compare_258_loop:
-	ldr	x_\tmp0,[x_\str0,x_\match_length]
-	ldr	x_\tmp1,[x_\str1,x_\match_length]
-	eor 	x_\tmp0,x_\tmp1,x_\tmp0
-	rbit	x_\tmp0,x_\tmp0
-	clz	x_\tmp0,x_\tmp0
-	lsr	x_\tmp0,x_\tmp0,3
-	add	x_\match_length,x_\match_length,x_\tmp0
-
-
-	cmp	x_\match_length,257
-	ccmp	x_\tmp0,8,0,ls
-	beq	_compare_258_loop
-
-	cmp	x_\match_length,258
-	mov	x_\tmp1,258
-	csel	x_\match_length,x_\match_length,x_\tmp1,ls
-.endm
-
 .macro compare_max_258_bytes str0:req,str1:req,max_length:req,match_length:req,tmp0:req,tmp1:req
 	mov	x_\match_length,0
 	mov 	x_\tmp0,258
 	cmp	x_\max_length,x_\tmp0
 	csel	x_\max_length,x_\max_length,x_\tmp0,ls
 _compare_258_loop:
+	sub	x_\tmp0,x_\max_length,x_\match_length
+	cmp	x_\tmp0,8
+	b.lo	_compare_258_tail
 	ldr	x_\tmp0,[x_\str0,x_\match_length]
 	ldr	x_\tmp1,[x_\str1,x_\match_length]
 	eor 	x_\tmp0,x_\tmp1,x_\tmp0
@@ -140,33 +121,19 @@ _compare_258_loop:
 	clz	x_\tmp0,x_\tmp0
 	lsr	x_\tmp0,x_\tmp0,3
 	add	x_\match_length,x_\match_length,x_\tmp0
-
-
-	cmp	x_\max_length,x_\match_length
-	ccmp	x_\tmp0,8,0,hi
-	beq	_compare_258_loop
-
+	cmp	x_\tmp0,8
+	b.eq	_compare_258_loop
+	b	_compare_258_done
+_compare_258_tail:
 	cmp	x_\match_length,x_\max_length
-	csel	x_\match_length,x_\match_length,x_\max_length,ls
-.endm
-
-.macro compare_aarch64 str0:req,str1:req,max_length:req,match_length:req,tmp0:req,tmp1:req
-	mov	x_\match_length,0
-_compare_loop:
-	ldr	x_\tmp0,[x_\str0,x_\match_length]
-	ldr	x_\tmp1,[x_\str1,x_\match_length]
-	eor 	x_\tmp0,x_\tmp1,x_\tmp0
-	rbit	x_\tmp0,x_\tmp0
-	clz	x_\tmp0,x_\tmp0
-	lsr	x_\tmp0,x_\tmp0,3
-	add	x_\match_length,x_\match_length,x_\tmp0
-
-	cmp	x_\max_length,x_\match_length
-	ccmp	x_\tmp0,8,0,hi
-	beq	_compare_loop
-
-	cmp	x_\match_length,x_\max_length
-	csel	x_\match_length,x_\match_length,x_\max_length,ls
+	b.hs	_compare_258_done
+	ldrb	w_\tmp0,[x_\str0,x_\match_length]
+	ldrb	w_\tmp1,[x_\str1,x_\match_length]
+	cmp	w_\tmp0,w_\tmp1
+	b.ne	_compare_258_done
+	add	x_\match_length,x_\match_length,1
+	b	_compare_258_tail
+_compare_258_done:
 .endm
 
 #endif
