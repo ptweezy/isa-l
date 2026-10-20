@@ -136,6 +136,8 @@ int main(int argc, char **argv)
 		for (int si = 0; si < nsizes; si++) {
 			size_t len = sizes[si];
 			long n = 0, ndiff = 0, nbad = 0;
+			/* Slices where each build differs from the first build, and from the second */
+			long vs0[MAXLIB] = { 0 }, vs1[MAXLIB] = { 0 };
 			for (size_t off = 0; off + len <= flen; off += stride, n++) {
 				size_t clen[MAXLIB];
 				for (int l = 0; l < nlib; l++) {
@@ -145,8 +147,13 @@ int main(int argc, char **argv)
 							level_buf);
 				}
 				int differs = 0;
-				for (int l = 1; l < nlib; l++)
-					differs |= clen[l] != clen[0] || memcmp(out[l], out[0], clen[0]);
+				for (int l = 1; l < nlib; l++) {
+					int d0 = clen[l] != clen[0] || memcmp(out[l], out[0], clen[0]);
+					int d1 = clen[l] != clen[1] || memcmp(out[l], out[1], clen[1]);
+					vs0[l] += d0;
+					vs1[l] += d1;
+					differs |= d0;
+				}
 				if (!differs)
 					continue;
 				ndiff++;
@@ -164,6 +171,10 @@ int main(int argc, char **argv)
 			}
 			printf("L%d %5zuK: %ld slices, %ld differ, %ld invalid outputs\n", lv, len >> 10,
 			       n, ndiff, nbad);
+			if (ndiff)
+				for (int l = 1; l < nlib; l++)
+					printf("    %s differs from %s in %ld, from %s in %ld\n",
+					       libs[l].name, libs[0].name, vs0[l], libs[1].name, vs1[l]);
 			fflush(stdout);
 			total_diff += ndiff;
 			total_bad += nbad;

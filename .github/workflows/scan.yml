@@ -23,8 +23,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # #444 alone against master
-          - { arch: arm64, os: ubuntu-24.04-arm, builds: "pr444", args: "", poison: false }
+          # Which commits of #440 change the output: #439 up to its ICF fix, all of #439 and #437, and #440
+          - { arch: arm64, os: ubuntu-24.04-arm, builds: "icf base440 pr440", args: "", poison: false }
     name: scan (${{ matrix.arch }}, ${{ matrix.builds }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
