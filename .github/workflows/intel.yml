@@ -1,0 +1,61 @@
+name: Benchmarks of open PRs on Intel runners
+
+on:
+  push:
+    branches:
+      - ci-intel
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  MASTER: 8fa1e72fee7338fcfbf829b00f2f407631bd2dba  # master the PRs are measured against
+  PR444: e292b2028964a6e89d05b6f80f7b9cae20506814   # igzip-huffman-tables-v2
+  PR445: 29dc7f377d3652c96e54413eb215af8d5205a149   # AVX-512 adler32
+  CRC: c1b6b3f23f69aa5a73d78f5536f30fc843db4d8e     # x86-crc32-iscsi-zen5
+
+jobs:
+  # Most x64 runners are AMD, so many jobs start and all but the ones on an
+  # Intel CPU with the second AVX-512 group stop after the first step
+  bench:
+    strategy:
+      fail-fast: false
+      matrix:
+        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+              16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: CPU
+        run: |
+          grep -m1 "model name" /proc/cpuinfo
+          if grep -q GenuineIntel /proc/cpuinfo && grep -q avx512_vbmi2 /proc/cpuinfo; then
+            echo "INTEL=1" >> $GITHUB_ENV
+          fi
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        if: env.INTEL == '1'
+        with:
+          fetch-depth: 0
+      - name: Install build dependencies
+        if: env.INTEL == '1'
+        run: sudo apt-get update -y && sudo apt-get install -y nasm zlib1g-dev
+      - uses: actions/cache@v4
+        if: env.INTEL == '1'
+        with:
+          path: ~/corpus/silesia.zip
+          key: silesia-zip-1
+      - name: Unpack the Silesia corpus
+        if: env.INTEL == '1'
+        run: bash .github/bench/corpus.sh
+      - name: Build
+        if: env.INTEL == '1'
+        run: bash .github/bench/prepare.sh master:$MASTER pr444:$PR444 pr445:$PR445 crc:$CRC
+      - name: Benchmark
+        if: env.INTEL == '1'
+        run: bash .github/bench/x64.sh $HOME/results
+      - uses: actions/upload-artifact@v4
+        if: always() && env.INTEL == '1'
+        with:
+          name: intel-${{ matrix.run }}
+          path: ~/results
