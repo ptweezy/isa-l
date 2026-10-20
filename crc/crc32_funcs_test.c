@@ -39,8 +39,15 @@
 #define TEST_SEED 0x1234
 #endif
 
-#define MAX_BUF   4096
-#define TEST_SIZE 32
+#define MAX_BUF      4096
+#define TEST_SIZE    32
+#define LONG_MAX_BUF (1024 * 1024)
+#define LONG_TESTS   100
+#define LONG_CHUNK   (16 * 1024 * 1024)
+#define LONG_BIG_LEN (3 * LONG_CHUNK + 13)
+
+static const uint64_t long_fixed_lens[] = { 5 * 1024 * 1024 + 7, 2 * LONG_CHUNK - 1, 2 * LONG_CHUNK,
+                                            LONG_BIG_LEN };
 
 typedef uint32_t (*crc32_func_t)(uint32_t, const uint8_t *, uint64_t);
 typedef uint32_t (*crc32_func_t_base)(uint32_t, uint8_t *, uint64_t);
@@ -103,6 +110,9 @@ eob_test(func_case_t *test_func);
 int
 update_test(func_case_t *test_func);
 
+int
+long_test(func_case_t *test_func);
+
 void *buf_alloc = NULL;
 
 int
@@ -131,6 +141,7 @@ main(int argc, char *argv[])
                 fail_case += seeds_sizes_test(test_func);
                 fail_case += eob_test(test_func);
                 fail_case += update_test(test_func);
+                fail_case += long_test(test_func);
                 printf(" done: %s\n", fail_case ? "Fail" : "Pass");
 
                 if (fail_case) {
@@ -347,5 +358,65 @@ update_test(func_case_t *test_func)
                 printf(".");
 #endif
 
+        return fail;
+}
+
+// Long buffers of random lengths, alignments and seeds against the base functions
+int
+long_test(func_case_t *test_func)
+{
+        uint32_t crc_base, crc, r;
+        uint64_t len, offset;
+        int fail = 0;
+        int i;
+        unsigned char *buf = NULL;
+
+        buf = malloc(LONG_BIG_LEN + 64);
+        if (buf == NULL) {
+                printf("alloc error: Fail");
+                return 1;
+        }
+        rand_buffer(buf, LONG_BIG_LEN + 64);
+
+        // Lengths that split into 16 MB pieces, and one in between
+        for (i = 0; i < (int) (sizeof(long_fixed_lens) / sizeof(long_fixed_lens[0])); i++) {
+                len = long_fixed_lens[i];
+                offset = rand() % 64;
+                r = rand();
+
+                crc_base = test_func->crc32_base_call(r, buf + offset, len);
+                crc = test_func->crc32_func_call(r, buf + offset, len);
+
+                if (crc != crc_base) {
+                        fail++;
+                        printf("fail crc long len %lu offset %lu = 0x%8x 0x%8x\n",
+                               (unsigned long) len, (unsigned long) offset, crc_base, crc);
+                }
+        }
+
+        for (i = 0; i < LONG_TESTS; i++) {
+                // Half of the lengths are near 12 KB, half up to LONG_MAX_BUF
+                if (i % 2)
+                        len = 12 * 1024 - 256 + rand() % 512;
+                else
+                        len = ((uint64_t) rand() << 15 ^ rand()) % LONG_MAX_BUF;
+                offset = rand() % 64;
+                r = rand();
+
+                crc_base = test_func->crc32_base_call(r, buf + offset, len);
+                crc = test_func->crc32_func_call(r, buf + offset, len);
+
+                if (crc != crc_base) {
+                        fail++;
+                        printf("fail crc long len %lu offset %lu = 0x%8x 0x%8x\n",
+                               (unsigned long) len, (unsigned long) offset, crc_base, crc);
+                }
+#ifdef TEST_VERBOSE
+                else if (i % (LONG_TESTS / 8) == 0)
+                        printf(".");
+#endif
+        }
+
+        free(buf);
         return fail;
 }
