@@ -23,8 +23,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Which commits of #440 change the level 1 and 2 output of 64 KB slices
-          - { arch: arm64, os: ubuntu-24.04-arm, builds: "icf base440 pr440", args: "-z 64 -l 1,2", poison: false }
+          # #444 alone against master
+          - { arch: arm64, os: ubuntu-24.04-arm, builds: "pr444", args: "", poison: false }
     name: scan (${{ matrix.arch }}, ${{ matrix.builds }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
