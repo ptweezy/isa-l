@@ -1,0 +1,149 @@
+name: Benchmarks and checks of open PRs on GitHub runners
+
+on:
+  push:
+    branches:
+      - ci-bench
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  MASTER: 8fa1e72fee7338fcfbf829b00f2f407631bd2dba  # master the PRs are measured against
+  PR440: eb907c33b6fd7a6eaeb5a6e63c3eff8572929e4e   # igzip-aarch64-speedups
+  PR444: e292b2028964a6e89d05b6f80f7b9cae20506814   # igzip-huffman-tables-v2
+  PR445: 29dc7f377d3652c96e54413eb215af8d5205a149   # AVX-512 adler32
+  CRC: c1b6b3f23f69aa5a73d78f5536f30fc843db4d8e     # x86-crc32-iscsi-zen5
+
+jobs:
+  # Several runs, since each can land on a different CPU model
+  bench_x64:
+    strategy:
+      fail-fast: false
+      matrix:
+        run: [1, 2, 3, 4, 5, 6]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Install build dependencies
+        run: sudo apt-get update -y && sudo apt-get install -y nasm zlib1g-dev
+      - uses: actions/cache@v4
+        with:
+          path: ~/corpus/silesia.zip
+          key: silesia-zip-1
+      - name: Unpack the Silesia corpus
+        run: bash .github/bench/corpus.sh
+      - name: Build
+        run: bash .github/bench/prepare.sh master:$MASTER pr444:$PR444 pr445:$PR445 crc:$CRC
+      - name: Benchmark
+        run: bash .github/bench/x64.sh $HOME/results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: x64-${{ matrix.run }}
+          path: ~/results
+
+  bench_arm64:
+    strategy:
+      fail-fast: false
+      matrix:
+        run: [1, 2, 3]
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Install build dependencies
+        run: sudo apt-get update -y && sudo apt-get install -y zlib1g-dev
+      - uses: actions/cache@v4
+        with:
+          path: ~/corpus/silesia.zip
+          key: silesia-zip-1
+      - name: Unpack the Silesia corpus
+        run: bash .github/bench/corpus.sh
+      - name: Build
+        run: bash .github/bench/prepare.sh master:$MASTER pr440:$PR440 pr444:$PR444
+      - name: Benchmark
+        run: bash .github/bench/arm64.sh $HOME/results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: arm64-${{ matrix.run }}
+          path: ~/results
+
+  # The same tests as upstream's CI, which has not run on these PRs
+  check_linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: pr445, ref: 29dc7f377d3652c96e54413eb215af8d5205a149, os: ubuntu-24.04 }
+          - { name: crc, ref: c1b6b3f23f69aa5a73d78f5536f30fc843db4d8e, os: ubuntu-24.04 }
+          - { name: pr440, ref: eb907c33b6fd7a6eaeb5a6e63c3eff8572929e4e, os: ubuntu-24.04-arm }
+          - { name: pr444, ref: e292b2028964a6e89d05b6f80f7b9cae20506814, os: ubuntu-24.04-arm }
+    name: check_linux (${{ matrix.name }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ matrix.ref }}
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: ci
+      - name: Install build dependencies
+        run: sudo apt-get update -y && sudo apt-get install -y nasm
+        if: runner.arch == 'X64'
+      - name: CPU
+        run: bash ci/.github/bench/cpu.sh
+      - name: Build
+        run: |
+          rm -rf ci
+          ./autogen.sh
+          ./configure --prefix ${HOME}/.local
+          bash -c 'make -j $(nproc)'
+      - name: Run tests
+        run: bash tools/test_checks.sh
+      - name: Run extended tests
+        run: bash tools/test_extended.sh
+
+  check_windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: pr445, ref: 29dc7f377d3652c96e54413eb215af8d5205a149, kab: -DNO_CRC32_ISCSI_FUSED }
+          - { name: crc, ref: c1b6b3f23f69aa5a73d78f5536f30fc843db4d8e, kab: -DNO_ADLER32_AVX512 }
+    name: check_windows (${{ matrix.name }})
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ matrix.ref }}
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: ci
+      - name: Install nasm
+        uses: ilammy/setup-nasm@72793074d3c8cdda771dba85f6deafe00623038b # v1.5.2
+      - name: CPU
+        shell: pwsh
+        run: Get-CimInstance Win32_Processor | Format-List Name, Manufacturer, NumberOfLogicalProcessors
+      - name: Build
+        shell: bash
+        run: |
+          make -j $(nproc) -f Makefile.unx programs/igzip tests SIM= arch=mingw host_cpu=x86_64 AR=x86_64-w64-mingw32-gcc-ar
+      - name: Run tests
+        shell: bash
+        run: |
+          make -j $(nproc) -f Makefile.unx check D=TEST_SEED=0 SIM= arch=mingw host_cpu=x86_64 AR=x86_64-w64-mingw32-gcc-ar
+      # Calls the new kernel directly and compares it with the others, so it runs
+      # under the Windows calling convention even where isa-l would not pick it
+      - name: Kernels
+        shell: bash
+        run: |
+          gcc -O2 ${{ matrix.kab }} ci/.github/bench/kab.c bin/isa-l.a -o kab.exe
+          ./kab.exe 5
