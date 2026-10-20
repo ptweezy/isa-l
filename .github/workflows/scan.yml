@@ -14,6 +14,8 @@ env:
   PR440: eb907c33b6fd7a6eaeb5a6e63c3eff8572929e4e   # igzip-aarch64-speedups
   PR444: e292b2028964a6e89d05b6f80f7b9cae20506814   # igzip-huffman-tables-v2
   PR445: 29dc7f377d3652c96e54413eb215af8d5205a149   # AVX-512 adler32
+  ICF: 0a8166a9c57a9f3194b763b15131a6dad025a063     # #439 up to "store the ICF buffer space in bytes"
+  BASE440: 82666b2d5268d5690fdb329fb68d93810acdfdd1 # #439 and #437, under #440's own commits
 
 jobs:
   scan:
@@ -21,9 +23,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { arch: x64, os: ubuntu-24.04, builds: "pr444 pr445" }
-          - { arch: arm64, os: ubuntu-24.04-arm, builds: "pr440 pr444" }
-    name: scan (${{ matrix.arch }})
+          # Which commits of #440 change the level 1 and 2 output of 64 KB slices
+          - { arch: arm64, os: ubuntu-24.04-arm, builds: "icf base440 pr440", args: "-z 64 -l 1,2", poison: false }
+    name: scan (${{ matrix.arch }}, ${{ matrix.builds }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     steps:
@@ -52,8 +54,9 @@ jobs:
           gcc -O2 -I ~/isal/master/include .github/bench/scan.c -o scan -ldl -lz
           libs="$HOME/isal/master/bin/libisal.so"
           for b in ${{ matrix.builds }}; do libs="$libs $HOME/isal/$b/bin/libisal.so"; done
-          ./scan -t 4093 $libs -- ~/corpus/silesia.tar
+          ./scan -t 4093 ${{ matrix.args }} $libs -- ~/corpus/silesia.tar
       - name: Scan with the level buffer refilled before every call
+        if: matrix.poison
         run: |
           libs="$HOME/isal/master/bin/libisal.so"
           for b in ${{ matrix.builds }}; do libs="$libs $HOME/isal/$b/bin/libisal.so"; done
