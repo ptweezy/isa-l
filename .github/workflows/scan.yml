@@ -1,0 +1,60 @@
+name: Differential deflate scan of open PRs
+
+on:
+  push:
+    branches:
+      - ci-scan
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  MASTER: 8fa1e72fee7338fcfbf829b00f2f407631bd2dba  # master the PRs are measured against
+  PR440: eb907c33b6fd7a6eaeb5a6e63c3eff8572929e4e   # igzip-aarch64-speedups
+  PR444: e292b2028964a6e89d05b6f80f7b9cae20506814   # igzip-huffman-tables-v2
+  PR445: 29dc7f377d3652c96e54413eb215af8d5205a149   # AVX-512 adler32
+
+jobs:
+  scan:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x64, os: ubuntu-24.04, builds: "pr444 pr445" }
+          - { arch: arm64, os: ubuntu-24.04-arm, builds: "pr440 pr444" }
+    name: scan (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Install build dependencies
+        run: sudo apt-get update -y && sudo apt-get install -y nasm zlib1g-dev
+      - uses: actions/cache@v4
+        with:
+          path: ~/corpus/silesia.zip
+          key: silesia-zip-1
+      - name: Unpack the Silesia corpus
+        run: bash .github/bench/corpus.sh
+      - name: Build
+        run: |
+          specs="master:$MASTER"
+          for b in ${{ matrix.builds }}; do
+            v=${b^^}; specs="$specs $b:${!v}"
+          done
+          bash .github/bench/prepare.sh $specs
+      - name: CPU
+        run: bash .github/bench/cpu.sh
+      - name: Scan
+        run: |
+          gcc -O2 -I ~/isal/master/include .github/bench/scan.c -o scan -ldl -lz
+          libs="$HOME/isal/master/bin/libisal.so"
+          for b in ${{ matrix.builds }}; do libs="$libs $HOME/isal/$b/bin/libisal.so"; done
+          ./scan -t 4093 $libs -- ~/corpus/silesia.tar
+      - name: Scan with the level buffer refilled before every call
+        run: |
+          libs="$HOME/isal/master/bin/libisal.so"
+          for b in ${{ matrix.builds }}; do libs="$libs $HOME/isal/$b/bin/libisal.so"; done
+          ./scan -p -z 64 -l 1,2 -t 20011 $libs -- ~/corpus/silesia.tar
