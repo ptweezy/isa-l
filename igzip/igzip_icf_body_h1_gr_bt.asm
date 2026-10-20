@@ -302,9 +302,11 @@ isal_deflate_icf_body_ %+ METHOD %+ _ %+ ARCH %+ :
 	compute_hash	hash2, tmp2
 	and	hash2 %+ d, [rsp + hash_mask_offset]
 
-	;; A match of 4 to 7 bytes ends in the 8 bytes at f_i + 3, so the paths
-	;; for them hash the bytes after the match without loading them
+	;; A match of 4 to 7 bytes at f_i - 1 ends in the 8 bytes at f_i + 3,
+	;; and one at f_i in the 8 bytes at f_i + 4, so the paths for them hash
+	;; the bytes after the match without loading them
 	mov	tmp3, [tmp1 + 4]
+	mov	tmp2, [tmp1 + 5]
 
 	;; Check for long len/dist match (>7) with first literal
 	mov	len, curr_data
@@ -330,8 +332,79 @@ isal_deflate_icf_body_ %+ METHOD %+ _ %+ ARCH %+ :
 	jnz     .write_lit_bits
 
 .len_dist_lit_huffman_pre:
+	;; A literal and a match of 4 to 7 bytes at f_i. The bytes after the
+	;; match start at the byte of the lowest set bit of len2 in tmp2, the
+	;; 8 bytes at f_i + 4.
 	bsf	len2, len2
+	mov	len, tmp2
+	mov	tmp3, len2
+	and	tmp3, 0x18
+	SHRX	len, len, tmp3
 	shr	len2, 3
+
+	or	lit_code, LIT
+	mov	dword [m_out_buf], lit_code %+ d
+
+	;; Update the hash table and hash the two bytes after the match
+	lea	tmp3, [f_i + 1]
+	mov	[hash_table + 2 * hash], tmp3 %+ w
+	add	tmp3, 1
+	mov	[hash_table + 2 * hash2], tmp3 %+ w
+
+	compute_hash	hash, len
+	shr	len, 8
+	compute_hash	hash2, len
+	and	hash %+ d, [rsp + hash_mask_offset]
+	and	hash2 %+ d, [rsp + hash_mask_offset]
+
+	not	dist2
+	get_dist_icf_code	dist2, dist_code2, tmp1
+
+	add	f_i, len2
+	cmp	f_i, file_length
+	jg	.len_dist_lit_huffman_write
+
+	lea	tmp1, [f_i + SKIP_SIZE_BASE]
+	mov	qword [rsp + skip_match_offset], tmp1
+	sub	qword [rsp + skip_level_offset], len2
+
+	;; Add f_i + 3, which is in the match too
+	shr	curr_data, 24
+	compute_hash	tmp1, curr_data
+	and	tmp1 %+ d, [rsp + hash_mask_offset]
+	add	tmp3, 1
+	mov	[hash_table + 2 * tmp1], tmp3 %+ w
+
+	mov	curr_data, [file_start + f_i]
+
+	add	dist_code2, 254
+	add	dist_code2, len2
+
+	inc	dword [lit_len_hist + HIST_ELEM_SIZE*(len2 + 254)]
+
+	mov	dword [m_out_buf + 4], dist_code2 %+ d
+	add	m_out_buf, 8
+
+	shr	dist_code2, DIST_OFFSET
+	and	dist_code2, 0x1F
+	inc	dword [dist_hist + HIST_ELEM_SIZE*dist_code2]
+
+	jmp	.loop2
+
+.len_dist_lit_huffman_write:
+	add	dist_code2, 254
+	add	dist_code2, len2
+
+	inc	dword [lit_len_hist + HIST_ELEM_SIZE*(len2 + 254)]
+
+	mov	dword [m_out_buf + 4], dist_code2 %+ d
+	add	m_out_buf, 8
+
+	shr	dist_code2, DIST_OFFSET
+	and	dist_code2, 0x1F
+	inc	dword [dist_hist + HIST_ELEM_SIZE*dist_code2]
+
+	jmp	.input_end
 
 .len_dist_lit_huffman:
 	or	lit_code, LIT
