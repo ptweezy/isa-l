@@ -1,0 +1,61 @@
+name: Checks of the c0 branches on GitHub runners
+
+on:
+  push:
+    branches:
+      - ci-check-c0
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  MASTER: 8fa1e72fee7338fcfbf829b00f2f407631bd2dba  # master the branches are measured against
+  STACK: 6179d9191cac28ad55c5172e5d52433f394332e0   # c0-stack: master and the open PRs
+  INFL: f0bb7a2246fe104a5dfe20604b5dcab63f9b255d    # c0-infl
+  L1: c1e02921aca5213a74ba3c4ebcde56408a1a8756      # c0-l1
+  L3: b9ce49b84a4e8624e038af6aeabdc8b2095fa357      # c0-l3
+  HUFF: 437050bd0af2a00bb425775baadf7492eeff2711    # c0-huff
+  CRC: c2e5d4e07bfe9029f184c9f06a21180157bba6ad     # c0-crc
+  ALL: 93c3e65b18afabc91079428d96de9a56594e0d0e     # c0-all
+
+jobs:
+  # The same tests as upstream's CI, on the branch with everything
+  check_linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { run: 1, os: ubuntu-24.04 }
+          - { run: 2, os: ubuntu-24.04 }
+          - { run: 3, os: ubuntu-24.04 }
+          - { run: 4, os: ubuntu-24.04-arm }
+    name: check_linux (all, ${{ matrix.os }}, ${{ matrix.run }})
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: 93c3e65b18afabc91079428d96de9a56594e0d0e
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: ci
+      - name: Install build dependencies
+        run: sudo apt-get update -y && sudo apt-get install -y nasm
+        if: runner.arch == 'X64'
+      - name: CPU
+        run: bash ci/.github/bench/cpu.sh
+      - name: Build
+        run: |
+          rm -rf ci
+          ./autogen.sh
+          ./configure --prefix ${HOME}/.local
+          bash -c 'make -j $(nproc)'
+      # c0-l3 adds igzip_icf_map_test to igzip/Makefile.am but not to
+      # Makefile.nmake, which stops test_extended.sh at its nmake check before
+      # the noarch and mingw builds, so regenerate it here
+      - name: Regenerate Makefile.nmake
+        run: make -f Makefile.unx host_cpu=x86_64 Makefile.nmake && git diff --stat
+      - name: Run tests
+        run: bash tools/test_checks.sh
+      - name: Run extended tests
+        run: bash tools/test_extended.sh

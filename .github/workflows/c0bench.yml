@@ -109,6 +109,11 @@ jobs:
           ./autogen.sh
           ./configure --prefix ${HOME}/.local
           bash -c 'make -j $(nproc)'
+      # c0-l3 adds igzip_icf_map_test to igzip/Makefile.am but not to
+      # Makefile.nmake, which stops test_extended.sh at its nmake check before
+      # the noarch and mingw builds, so regenerate it here
+      - name: Regenerate Makefile.nmake
+        run: make -f Makefile.unx host_cpu=x86_64 Makefile.nmake && git diff --stat
       - name: Run tests
         run: bash tools/test_checks.sh
       - name: Run extended tests
