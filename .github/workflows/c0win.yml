@@ -1,0 +1,61 @@
+name: Windows checks of the c0 branches on AVX-512 runners
+
+on:
+  push:
+    branches:
+      - ci-win-c0
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check_windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+              21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
+    name: check_windows_avx512 (all, ${{ matrix.run }})
+    runs-on: windows-latest
+    steps:
+      # Most Windows runners have no AVX-512, so all but the jobs on an AMD Zen 4
+      # or Zen 5 EPYC or an Intel Xeon stop after this step
+      - name: CPU
+        shell: pwsh
+        run: |
+          $n = (Get-CimInstance Win32_Processor | Select-Object -First 1).Name
+          Write-Output $n
+          if ($n -match '9V74|9V45|Xeon') { Add-Content -Path $env:GITHUB_ENV -Value 'AVX512=1' }
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        if: env.AVX512 == '1'
+        with:
+          ref: 93c3e65b18afabc91079428d96de9a56594e0d0e
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        if: env.AVX512 == '1'
+        with:
+          path: ci
+      - name: Install nasm
+        if: env.AVX512 == '1'
+        uses: ilammy/setup-nasm@72793074d3c8cdda771dba85f6deafe00623038b # v1.5.2
+      - name: Build
+        if: env.AVX512 == '1'
+        shell: bash
+        run: |
+          make -j $(nproc) -f Makefile.unx programs/igzip tests SIM= arch=mingw host_cpu=x86_64 AR=x86_64-w64-mingw32-gcc-ar
+      - name: Run tests
+        if: env.AVX512 == '1'
+        shell: bash
+        run: |
+          make -j $(nproc) -f Makefile.unx check D=TEST_SEED=0 SIM= arch=mingw host_cpu=x86_64 AR=x86_64-w64-mingw32-gcc-ar
+      # Calls the AVX-512 kernels directly and compares them with the others, so
+      # they run under the Windows calling convention even where isa-l would not
+      # pick them
+      - name: Kernels
+        if: env.AVX512 == '1'
+        shell: bash
+        run: |
+          gcc -O2 ci/.github/bench/kab.c bin/isa-l.a -o kab.exe
+          ./kab.exe 5
+          gcc -O2 ci/.github/bench/ckab.c bin/isa-l.a -o ckab.exe
+          ./ckab.exe 5
