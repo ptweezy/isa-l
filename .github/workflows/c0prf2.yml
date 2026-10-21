@@ -1,0 +1,53 @@
+name: Benchmarks of the c0 PR branches on Zen 5, Ice Lake and Emerald Rapids runners
+
+on:
+  push:
+    branches:
+      - ci-prf2-c0
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Most x64 runners are other CPUs, so many jobs start and all but the ones
+  # on an EPYC 9V45 (Zen 5), Xeon 8370C (Ice Lake) or Xeon 8573C (Emerald Rapids) stop after the first step
+  bench:
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [defl, infl, huff]
+        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+              21, 22, 23, 24]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - name: CPU
+        run: |
+          grep -m1 "model name" /proc/cpuinfo
+          if grep -m1 "model name" /proc/cpuinfo | grep -q -E "9V45|8370C|8573C"; then
+            echo "WANT=1" >> $GITHUB_ENV
+          fi
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        if: env.WANT == '1'
+        with:
+          fetch-depth: 0
+      - name: Install build dependencies
+        if: env.WANT == '1'
+        run: sudo apt-get update -y && sudo apt-get install -y nasm zlib1g-dev
+      - uses: actions/cache@v4
+        if: env.WANT == '1'
+        with:
+          path: ~/corpus/silesia.zip
+          key: silesia-zip-1
+      - name: Unpack the Silesia corpus
+        if: env.WANT == '1'
+        run: bash .github/bench/corpus.sh
+      - name: Build and benchmark
+        if: env.WANT == '1'
+        run: bash .github/bench/c0pr.sh $HOME/results ${{ matrix.group }}
+      - uses: actions/upload-artifact@v4
+        if: always() && env.WANT == '1'
+        with:
+          name: f2-${{ matrix.group }}-${{ matrix.run }}
+          path: ~/results
