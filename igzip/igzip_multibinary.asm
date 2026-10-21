@@ -62,6 +62,7 @@ extern set_long_icf_fg_base
 extern set_long_icf_fg_04
 
 extern encode_deflate_icf_06
+extern encode_deflate_icf_10
 extern set_long_icf_fg_06
 extern gen_icf_map_lh1_06
 
@@ -81,6 +82,85 @@ extern icf_body_lazyhash1_fillgreedy_greedy
 section .text
 
 %include "multibinary.asm"
+
+;;;;;
+; mbin_dispatch_init7_vbmi parameters
+; 1-> function name
+; 2-> base function
+; 3-> SSE4_2 or 00/01 optimized function
+; 4-> AVX/02 opt func
+; 5-> AVX2/04 opt func
+; 6-> AVX512/06 opt func
+; 7-> AVX512 Update/10 opt func that also uses AVX512 VBMI
+;
+; Like mbin_dispatch_init6, with the 10 opt func when the processor has the
+; AVX512 Update features and VBMI, which they do not include
+;;;;;
+%macro mbin_dispatch_init7_vbmi 7
+	section .text
+	%1_dispatch_init:
+		push	rsi
+		push	rax
+		push	rbx
+		push	rcx
+		push	rdx
+		push	rdi
+		lea	rsi, [%2 WRT_OPT] ; Default - use base function
+
+		mov	eax, 1
+		cpuid
+		mov	ebx, ecx ; save cpuid1.ecx
+		test	ecx, FLAG_CPUID1_ECX_SSE4_2
+		je	_%1_init_done	  ; Use base function if no SSE4_2
+		lea	rsi, [%3 WRT_OPT] ; SSE possible so use 00/01 opt
+
+		;; Test for XMM_YMM support/AVX
+		test	ecx, FLAG_CPUID1_ECX_OSXSAVE
+		je	_%1_init_done
+		xor	ecx, ecx
+		xgetbv	; xcr -> edx:eax
+		mov	edi, eax	  ; save xgetvb.eax
+
+		and	eax, FLAG_XGETBV_EAX_XMM_YMM
+		cmp	eax, FLAG_XGETBV_EAX_XMM_YMM
+		jne	_%1_init_done
+		test	ebx, FLAG_CPUID1_ECX_AVX
+		je	_%1_init_done
+		lea	rsi, [%4 WRT_OPT] ; AVX/02 opt
+
+		;; Test for AVX2
+		xor	ecx, ecx
+		mov	eax, 7
+		cpuid
+		test	ebx, FLAG_CPUID7_EBX_AVX2
+		je	_%1_init_done		; No AVX2 possible
+		lea	rsi, [%5 WRT_OPT] 	; AVX2/04 opt func
+
+		;; Test for AVX512
+		and	edi, FLAG_XGETBV_EAX_ZMM_OPM
+		cmp	edi, FLAG_XGETBV_EAX_ZMM_OPM
+		jne	_%1_init_done	  ; No AVX512 possible
+		and	ebx, FLAGS_CPUID7_EBX_AVX512_G1
+		cmp	ebx, FLAGS_CPUID7_EBX_AVX512_G1
+		jne	_%1_init_done
+		lea	rsi, [%6 WRT_OPT] ; AVX512/06 opt
+
+		;; Test for AVX512 Update and VBMI
+		and	ecx, FLAGS_CPUID7_ECX_AVX512_G2 | FLAG_CPUID7_ECX_AVX512VBMI
+		cmp	ecx, FLAGS_CPUID7_ECX_AVX512_G2 | FLAG_CPUID7_ECX_AVX512VBMI
+		lea	rbx, [%7 WRT_OPT] ; AVX512 VBMI/10 opt
+		cmove	rsi, rbx
+
+	_%1_init_done:
+		pop	rdi
+		pop	rdx
+		pop	rcx
+		pop	rbx
+		pop	rax
+		mov	[%1_dispatched], rsi
+		pop	rsi
+		ret
+%endmacro
 
 mbin_interface		isal_deflate_body
 mbin_dispatch_init5	isal_deflate_body, isal_deflate_body_base, isal_deflate_body_01, isal_deflate_body_02, isal_deflate_body_04
@@ -109,7 +189,7 @@ mbin_interface		isal_update_histogram
 mbin_dispatch_init5	isal_update_histogram, isal_update_histogram_base, isal_update_histogram_01, isal_update_histogram_01, isal_update_histogram_04
 
 mbin_interface		encode_deflate_icf
-mbin_dispatch_init6	encode_deflate_icf, encode_deflate_icf_base, encode_deflate_icf_base, encode_deflate_icf_base, encode_deflate_icf_04, encode_deflate_icf_06
+mbin_dispatch_init7_vbmi	encode_deflate_icf, encode_deflate_icf_base, encode_deflate_icf_base, encode_deflate_icf_base, encode_deflate_icf_04, encode_deflate_icf_06, encode_deflate_icf_10
 
 mbin_interface		set_long_icf_fg
 mbin_dispatch_init6	set_long_icf_fg, set_long_icf_fg_base, set_long_icf_fg_base, set_long_icf_fg_base, set_long_icf_fg_04, set_long_icf_fg_06
