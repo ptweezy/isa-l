@@ -47,6 +47,7 @@ lsrc_x86_64 += \
 	crc/crc32_ieee_01.asm \
 	crc/crc32_ieee_avx2.asm \
 	crc/crc32_ieee_by16_10.asm \
+	crc/crc32_ieee_by16_10_hybrid.asm \
 	crc/crc32_iscsi_01.asm \
 	crc/crc32_iscsi_by8_02.asm \
 	crc/crc32_iscsi_by16_10.asm \
@@ -79,7 +80,8 @@ lsrc_x86_64 += \
 	crc/crc64_rocksoft_norm_by16_10.asm \
 	crc/crc32_gzip_refl_by8.asm \
 	crc/crc32_gzip_refl_avx2.asm \
-	crc/crc32_gzip_refl_by16_10.asm
+	crc/crc32_gzip_refl_by16_10.asm \
+	crc/crc32_gzip_refl_by16_10_hybrid.asm
 
 src_include += -I $(srcdir)/crc
 extern_hdrs +=  include/crc.h include/crc64.h
