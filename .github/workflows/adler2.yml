@@ -1,0 +1,160 @@
+name: 256-bit AVX-512 adler32 on runners
+
+on:
+  push:
+    branches:
+      - ci-adler2
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  MASTER: 8fa1e72fee7338fcfbf829b00f2f407631bd2dba  # master the PRs are measured against
+  PR445: b0db7ec5f8370c9e873c982a8feb3e393ed45632   # 256-bit AVX-512 adler32
+
+jobs:
+  # Hosts with the second AVX-512 group: "all" takes any of them, "rare" only
+  # Granite Rapids (Xeon 6) and Ice Lake (8370C); other jobs stop after the first step
+  bench:
+    strategy:
+      fail-fast: false
+      matrix:
+        pick: [all]
+        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+        include:
+          - { pick: rare, run: 21 }
+          - { pick: rare, run: 22 }
+          - { pick: rare, run: 23 }
+          - { pick: rare, run: 24 }
+          - { pick: rare, run: 25 }
+          - { pick: rare, run: 26 }
+          - { pick: rare, run: 27 }
+          - { pick: rare, run: 28 }
+          - { pick: rare, run: 29 }
+          - { pick: rare, run: 30 }
+          - { pick: rare, run: 31 }
+          - { pick: rare, run: 32 }
+          - { pick: rare, run: 33 }
+          - { pick: rare, run: 34 }
+          - { pick: rare, run: 35 }
+          - { pick: rare, run: 36 }
+          - { pick: rare, run: 37 }
+          - { pick: rare, run: 38 }
+          - { pick: rare, run: 39 }
+          - { pick: rare, run: 40 }
+          - { pick: rare, run: 41 }
+          - { pick: rare, run: 42 }
+          - { pick: rare, run: 43 }
+          - { pick: rare, run: 44 }
+          - { pick: rare, run: 45 }
+          - { pick: rare, run: 46 }
+          - { pick: rare, run: 47 }
+          - { pick: rare, run: 48 }
+          - { pick: rare, run: 49 }
+          - { pick: rare, run: 50 }
+          - { pick: rare, run: 51 }
+          - { pick: rare, run: 52 }
+          - { pick: rare, run: 53 }
+          - { pick: rare, run: 54 }
+          - { pick: rare, run: 55 }
+          - { pick: rare, run: 56 }
+          - { pick: rare, run: 57 }
+          - { pick: rare, run: 58 }
+          - { pick: rare, run: 59 }
+          - { pick: rare, run: 60 }
+    name: bench (${{ matrix.pick }} ${{ matrix.run }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: CPU
+        run: |
+          model=$(grep -m1 "model name" /proc/cpuinfo)
+          echo "$model"
+          if [ "${{ matrix.pick }}" = all ]; then
+            grep -q avx512_vbmi2 /proc/cpuinfo && echo "GO=1" >> $GITHUB_ENV || true
+          else
+            echo "$model" | grep -q -E "Xeon\(R\) 6|8370C" && echo "GO=1" >> $GITHUB_ENV || true
+          fi
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        if: env.GO == '1'
+        with:
+          fetch-depth: 0
+      - name: Install build dependencies
+        if: env.GO == '1'
+        run: sudo apt-get update -y && sudo apt-get install -y nasm zlib1g-dev
+      - uses: actions/cache@v4
+        if: env.GO == '1'
+        with:
+          path: ~/corpus/silesia.zip
+          key: silesia-zip-1
+      - name: Unpack the Silesia corpus
+        if: env.GO == '1'
+        run: bash .github/bench/corpus.sh
+      - name: Build
+        if: env.GO == '1'
+        run: bash .github/bench/prepare.sh master:$MASTER pr445:$PR445
+      - name: Benchmark
+        if: env.GO == '1'
+        run: bash .github/bench/adler2.sh $HOME/results
+      - uses: actions/upload-artifact@v4
+        if: always() && env.GO == '1'
+        with:
+          name: adler2-${{ matrix.pick }}-${{ matrix.run }}
+          path: ~/results
+
+  check_linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ env.PR445 }}
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: ci
+      - name: Install build dependencies
+        run: sudo apt-get update -y && sudo apt-get install -y nasm
+      - name: CPU
+        run: bash ci/.github/bench/cpu.sh
+      - name: Build
+        run: |
+          rm -rf ci
+          ./autogen.sh
+          ./configure --prefix ${HOME}/.local
+          bash -c 'make -j $(nproc)'
+      - name: Run tests
+        run: bash tools/test_checks.sh
+      - name: Run extended tests
+        run: bash tools/test_extended.sh
+
+  check_windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        run: [1, 2, 3, 4]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ env.PR445 }}
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: ci
+      - name: Install nasm
+        uses: ilammy/setup-nasm@72793074d3c8cdda771dba85f6deafe00623038b # v1.5.2
+      - name: CPU
+        shell: pwsh
+        run: Get-CimInstance Win32_Processor | Format-List Name
+      - name: Build
+        shell: bash
+        run: |
+          make -j $(nproc) -f Makefile.unx programs/igzip tests SIM= arch=mingw host_cpu=x86_64 AR=x86_64-w64-mingw32-gcc-ar
+      - name: Run tests
+        shell: bash
+        run: |
+          make -j $(nproc) -f Makefile.unx check D=TEST_SEED=0 SIM= arch=mingw host_cpu=x86_64 AR=x86_64-w64-mingw32-gcc-ar
+      - name: Kernels
+        shell: bash
+        run: |
+          gcc -O2 -DNO_CRC32_ISCSI_FUSED ci/.github/bench/kab.c bin/isa-l.a -o kab.exe
+          ./kab.exe 5
