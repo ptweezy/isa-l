@@ -1,0 +1,98 @@
+name: Per-commit deflate benchmarks of the c0 l1 and l3 branches
+
+on:
+  push:
+    branches:
+      - ci-attr-c0
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  STACK: 6179d9191cac28ad55c5172e5d52433f394332e0   # c0-stack: master and the open PRs
+  L3A: da7c4f5bafa3b15a636fdd7f67a69a9adfce6faf     # c0-l3 commit 1: hash table without gathers
+  L3B: 8218ca2d9d427f3152a072af472fe68ed88b8b0b     # c0-l3 commit 2: parse without branches
+  L3C: b9ce49b84a4e8624e038af6aeabdc8b2095fa357     # c0-l3 commit 3: 16-byte extension
+  L3PO: 859855094acadd06124aabf3c407e8b94464983d    # c0-l3-parse-only: stack + commit 2 alone
+  L1A: 46ed6026666bdf6722039e6fe2a805c2183dba42     # c0-l1 commit 1: match search after short matches
+  L1B: b1d7651e69bd767ad38e6b14825d76d362848e60     # c0-l1 commit 2: literal + short match
+  L1C: 4c04bb11d7ba50a11cd89ba22f8049dc3eb0d535     # c0-l1 commit 3: VBMI encoder
+  L1EO: d8a02a57726de90a9bc6d7f65a27b99bbc40397b    # c0-l1-enc-only: stack + commit 3 alone
+
+jobs:
+  # Most x64 runners are AMD, so many jobs start and all but the ones on an
+  # Intel CPU stop after the first step
+  bench:
+    strategy:
+      fail-fast: false
+      matrix:
+        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+              21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
+              41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
+              61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80,
+              81, 82, 83, 84, 85, 86, 87, 88, 89, 90]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - name: CPU
+        run: |
+          grep -m1 "model name" /proc/cpuinfo
+          if grep -q GenuineIntel /proc/cpuinfo; then
+            echo "INTEL=1" >> $GITHUB_ENV
+          fi
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        if: env.INTEL == '1'
+        with:
+          fetch-depth: 0
+      - name: Install build dependencies
+        if: env.INTEL == '1'
+        run: sudo apt-get update -y && sudo apt-get install -y nasm zlib1g-dev
+      - uses: actions/cache@v4
+        if: env.INTEL == '1'
+        with:
+          path: ~/corpus/silesia.zip
+          key: silesia-zip-1
+      - name: Unpack the Silesia corpus
+        if: env.INTEL == '1'
+        run: bash .github/bench/corpus.sh
+      - name: Build
+        if: env.INTEL == '1'
+        run: bash .github/bench/prepare.sh stack:$STACK l3a:$L3A l3b:$L3B l3c:$L3C l3po:$L3PO l1a:$L1A l1b:$L1B l1c:$L1C l1eo:$L1EO
+      - name: Benchmark
+        if: env.INTEL == '1'
+        run: bash .github/bench/c0attr.sh $HOME/results
+      - uses: actions/upload-artifact@v4
+        if: always() && env.INTEL == '1'
+        with:
+          name: attr-intel-${{ matrix.run }}
+          path: ~/results
+
+  bench_x64:
+    strategy:
+      fail-fast: false
+      matrix:
+        run: [1, 2, 3, 4, 5, 6, 7, 8]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Install build dependencies
+        run: sudo apt-get update -y && sudo apt-get install -y nasm zlib1g-dev
+      - uses: actions/cache@v4
+        with:
+          path: ~/corpus/silesia.zip
+          key: silesia-zip-1
+      - name: Unpack the Silesia corpus
+        run: bash .github/bench/corpus.sh
+      - name: Build
+        run: bash .github/bench/prepare.sh stack:$STACK l3a:$L3A l3b:$L3B l3c:$L3C l3po:$L3PO l1a:$L1A l1b:$L1B l1c:$L1C l1eo:$L1EO
+      - name: Benchmark
+        run: bash .github/bench/c0attr.sh $HOME/results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: attr-x64-${{ matrix.run }}
+          path: ~/results
