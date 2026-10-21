@@ -1,0 +1,153 @@
+name: Benchmarks and checks of the c0 branches on GitHub runners
+
+on:
+  push:
+    branches:
+      - ci-bench-c0
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  MASTER: 8fa1e72fee7338fcfbf829b00f2f407631bd2dba  # master the branches are measured against
+  STACK: 6179d9191cac28ad55c5172e5d52433f394332e0   # c0-stack: master and the open PRs
+  INFL: f0bb7a2246fe104a5dfe20604b5dcab63f9b255d    # c0-infl
+  L1: c1e02921aca5213a74ba3c4ebcde56408a1a8756      # c0-l1
+  L3: b9ce49b84a4e8624e038af6aeabdc8b2095fa357      # c0-l3
+  HUFF: 437050bd0af2a00bb425775baadf7492eeff2711    # c0-huff
+  CRC: c2e5d4e07bfe9029f184c9f06a21180157bba6ad     # c0-crc
+  ALL: 93c3e65b18afabc91079428d96de9a56594e0d0e     # c0-all
+
+jobs:
+  # Several runs, since each can land on a different CPU model
+  bench_x64:
+    strategy:
+      fail-fast: false
+      matrix:
+        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Install build dependencies
+        run: sudo apt-get update -y && sudo apt-get install -y nasm zlib1g-dev
+      - uses: actions/cache@v4
+        with:
+          path: ~/corpus/silesia.zip
+          key: silesia-zip-1
+      - name: Unpack the Silesia corpus
+        run: bash .github/bench/corpus.sh
+      - name: Build
+        run: bash .github/bench/prepare.sh master:$MASTER stack:$STACK infl:$INFL l1:$L1 l3:$L3 huff:$HUFF crc:$CRC all:$ALL
+      - name: Benchmark
+        run: bash .github/bench/c0.sh $HOME/results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: x64-${{ matrix.run }}
+          path: ~/results
+
+  bench_arm64:
+    strategy:
+      fail-fast: false
+      matrix:
+        run: [1, 2, 3]
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Install build dependencies
+        run: sudo apt-get update -y && sudo apt-get install -y zlib1g-dev
+      - uses: actions/cache@v4
+        with:
+          path: ~/corpus/silesia.zip
+          key: silesia-zip-1
+      - name: Unpack the Silesia corpus
+        run: bash .github/bench/corpus.sh
+      - name: Build
+        run: bash .github/bench/prepare.sh master:$MASTER stack:$STACK infl:$INFL l1:$L1 l3:$L3 huff:$HUFF crc:$CRC all:$ALL
+      - name: Benchmark
+        run: bash .github/bench/c0.sh $HOME/results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: arm64-${{ matrix.run }}
+          path: ~/results
+
+  # The same tests as upstream's CI, on the branch with everything
+  check_linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { run: 1, os: ubuntu-24.04 }
+          - { run: 2, os: ubuntu-24.04 }
+          - { run: 3, os: ubuntu-24.04 }
+          - { run: 4, os: ubuntu-24.04-arm }
+    name: check_linux (all, ${{ matrix.os }}, ${{ matrix.run }})
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: 93c3e65b18afabc91079428d96de9a56594e0d0e
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: ci
+      - name: Install build dependencies
+        run: sudo apt-get update -y && sudo apt-get install -y nasm
+        if: runner.arch == 'X64'
+      - name: CPU
+        run: bash ci/.github/bench/cpu.sh
+      - name: Build
+        run: |
+          rm -rf ci
+          ./autogen.sh
+          ./configure --prefix ${HOME}/.local
+          bash -c 'make -j $(nproc)'
+      - name: Run tests
+        run: bash tools/test_checks.sh
+      - name: Run extended tests
+        run: bash tools/test_extended.sh
+
+  check_windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        run: [1, 2, 3]
+    name: check_windows (all, ${{ matrix.run }})
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: 93c3e65b18afabc91079428d96de9a56594e0d0e
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: ci
+      - name: Install nasm
+        uses: ilammy/setup-nasm@72793074d3c8cdda771dba85f6deafe00623038b # v1.5.2
+      - name: CPU
+        shell: pwsh
+        run: Get-CimInstance Win32_Processor | Format-List Name, Manufacturer, NumberOfLogicalProcessors
+      - name: Build
+        shell: bash
+        run: |
+          make -j $(nproc) -f Makefile.unx programs/igzip tests SIM= arch=mingw host_cpu=x86_64 AR=x86_64-w64-mingw32-gcc-ar
+      - name: Run tests
+        shell: bash
+        run: |
+          make -j $(nproc) -f Makefile.unx check D=TEST_SEED=0 SIM= arch=mingw host_cpu=x86_64 AR=x86_64-w64-mingw32-gcc-ar
+      # Calls the AVX-512 kernels directly and compares them with the others, so
+      # they run under the Windows calling convention even where isa-l would not
+      # pick them
+      - name: Kernels
+        shell: bash
+        run: |
+          gcc -O2 ci/.github/bench/kab.c bin/isa-l.a -o kab.exe
+          ./kab.exe 5
+          gcc -O2 ci/.github/bench/ckab.c bin/isa-l.a -o ckab.exe
+          ./ckab.exe 5
