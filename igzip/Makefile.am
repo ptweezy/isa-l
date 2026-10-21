@@ -86,6 +86,7 @@ extern_hdrs +=	include/igzip_lib.h
 check_tests +=  igzip/igzip_rand_test
 check_tests +=  igzip/igzip_wrapper_hdr_test
 check_tests +=  igzip/checksum32_funcs_test
+check_tests +=  igzip/igzip_icf_map_test
 
 other_tests +=  igzip/igzip_file_perf igzip/igzip_hist_perf
 other_tests +=  igzip/igzip_perf
