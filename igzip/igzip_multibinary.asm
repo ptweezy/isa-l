@@ -65,6 +65,8 @@ extern encode_deflate_icf_06
 extern encode_deflate_icf_10
 extern set_long_icf_fg_06
 extern gen_icf_map_lh1_06
+extern parse_icf_map_g_base
+extern parse_icf_map_g_06
 
 extern adler32_base
 extern adler32_avx2_4
@@ -191,11 +193,19 @@ mbin_dispatch_init5	isal_update_histogram, isal_update_histogram_base, isal_upda
 mbin_interface		encode_deflate_icf
 mbin_dispatch_init7_vbmi	encode_deflate_icf, encode_deflate_icf_base, encode_deflate_icf_base, encode_deflate_icf_base, encode_deflate_icf_04, encode_deflate_icf_06, encode_deflate_icf_10
 
+;; set_long_icf_fg_06 only works with the match maps of gen_icf_map_lh1_06, which extends the
+;; matches of 8 bytes that it finds, so the two must be dispatched together
 mbin_interface		set_long_icf_fg
 mbin_dispatch_init6	set_long_icf_fg, set_long_icf_fg_base, set_long_icf_fg_base, set_long_icf_fg_base, set_long_icf_fg_04, set_long_icf_fg_06
 
+;; gen_icf_map_lh1_06 extends the matches of 8 bytes that set_long_icf_fg_06 would, and the
+;; other versions leave them to set_long_icf_fg, so the two must be dispatched together.
+;; igzip_icf_map_test checks the pair.
 mbin_interface		gen_icf_map_lh1
 mbin_dispatch_init6	gen_icf_map_lh1, gen_icf_map_h1_base, gen_icf_map_h1_base, gen_icf_map_h1_base, gen_icf_map_lh1_04, gen_icf_map_lh1_06
+
+mbin_interface		parse_icf_map_g
+mbin_dispatch_init6	parse_icf_map_g, parse_icf_map_g_base, parse_icf_map_g_base, parse_icf_map_g_base, parse_icf_map_g_base, parse_icf_map_g_06
 
 mbin_interface		isal_adler32
 mbin_dispatch_init8	isal_adler32, adler32_base, adler32_sse, adler32_sse, adler32_avx2_4, adler32_avx2_4, adler32_avx2_4, adler32_avx512
