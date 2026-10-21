@@ -1,0 +1,68 @@
+name: Benchmarks of the c0 PR branches on GitHub runners
+
+on:
+  push:
+    branches:
+      - ci-pr-c0
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Several runs per group, since each can land on a different CPU model
+  bench_x64:
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [defl, infl, huff]
+        run: [1, 2, 3, 4, 5, 6, 7, 8]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Install build dependencies
+        run: sudo apt-get update -y && sudo apt-get install -y nasm zlib1g-dev
+      - uses: actions/cache@v4
+        with:
+          path: ~/corpus/silesia.zip
+          key: silesia-zip-1
+      - name: Unpack the Silesia corpus
+        run: bash .github/bench/corpus.sh
+      - name: Build and benchmark
+        run: bash .github/bench/c0pr.sh $HOME/results ${{ matrix.group }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: x64-${{ matrix.group }}-${{ matrix.run }}
+          path: ~/results
+
+  bench_arm64:
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [inflarm, huff]
+        run: [1, 2, 3]
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Install build dependencies
+        run: sudo apt-get update -y && sudo apt-get install -y zlib1g-dev
+      - uses: actions/cache@v4
+        with:
+          path: ~/corpus/silesia.zip
+          key: silesia-zip-1
+      - name: Unpack the Silesia corpus
+        run: bash .github/bench/corpus.sh
+      - name: Build and benchmark
+        run: bash .github/bench/c0pr.sh $HOME/results ${{ matrix.group }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: arm64-${{ matrix.group }}-${{ matrix.run }}
+          path: ~/results

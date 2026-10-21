@@ -1,0 +1,50 @@
+name: Windows xmm6-xmm15 check of master and igzip-encode-win64-xmm-save
+
+on:
+  push:
+    branches:
+      - ci-w64fix-c0
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  xmm:
+    strategy:
+      fail-fast: false
+      matrix:
+        tree:
+          - { name: master, ref: 469c7d0735f8cf9330622b111a5dc48eb8a09b7e }
+          - { name: fix, ref: bc4e5ed9ff8333e9a5ae1247c536adaba1eca2a7 }
+        run: [1, 2, 3, 4, 5, 6]
+    name: xmm (${{ matrix.tree.name }}, ${{ matrix.run }})
+    runs-on: windows-latest
+    steps:
+      - name: CPU
+        shell: pwsh
+        run: Get-CimInstance Win32_Processor | Format-List Name, Manufacturer, NumberOfLogicalProcessors
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ matrix.tree.ref }}
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: ci
+      - name: Install nasm
+        uses: ilammy/setup-nasm@72793074d3c8cdda771dba85f6deafe00623038b # v1.5.2
+      - name: Build
+        shell: bash
+        run: |
+          make -j $(nproc) -f Makefile.unx lib SIM= arch=mingw host_cpu=x86_64 AR=x86_64-w64-mingw32-gcc-ar
+          gcc -O2 -Iinclude ci/.github/bench/xmmcheck.c bin/isa-l.a -o xmmcheck.exe
+          cat igzip/*.c igzip/*.asm igzip/*.h crc/*.asm erasure_code/*.asm > in.dat
+          ls -l in.dat
+      # master is expected to fail here, so the step reports without failing the job
+      - name: xmm6-xmm15 across isa-l calls
+        shell: bash
+        run: ./xmmcheck.exe in.dat || echo "xmmcheck exit $?"
+      - name: Run tests
+        if: matrix.tree.name == 'fix'
+        shell: bash
+        run: |
+          make -j $(nproc) -f Makefile.unx check D=TEST_SEED=0 SIM= arch=mingw host_cpu=x86_64 AR=x86_64-w64-mingw32-gcc-ar
