@@ -112,9 +112,14 @@ mbin_dispatch_init5	isal_update_histogram, isal_update_histogram_base, isal_upda
 mbin_interface		encode_deflate_icf
 mbin_dispatch_init6	encode_deflate_icf, encode_deflate_icf_base, encode_deflate_icf_base, encode_deflate_icf_base, encode_deflate_icf_04, encode_deflate_icf_06
 
+;; set_long_icf_fg_06 only works with the match maps of gen_icf_map_lh1_06, which extends the
+;; matches of 8 bytes that it finds, so the two must be dispatched together
 mbin_interface		set_long_icf_fg
 mbin_dispatch_init6	set_long_icf_fg, set_long_icf_fg_base, set_long_icf_fg_base, set_long_icf_fg_base, set_long_icf_fg_04, set_long_icf_fg_06
 
+;; gen_icf_map_lh1_06 extends the matches of 8 bytes that set_long_icf_fg_06 would, and the
+;; other versions leave them to set_long_icf_fg, so the two must be dispatched together.
+;; igzip_icf_map_test checks the pair.
 mbin_interface		gen_icf_map_lh1
 mbin_dispatch_init6	gen_icf_map_lh1, gen_icf_map_h1_base, gen_icf_map_h1_base, gen_icf_map_h1_base, gen_icf_map_lh1_04, gen_icf_map_lh1_06
 
