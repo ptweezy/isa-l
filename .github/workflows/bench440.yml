@@ -1,0 +1,109 @@
+name: aarch64 deflate benchmarks, scan and tests of the aarch64 deflate PR
+
+on:
+  push:
+    branches:
+      - ci-bench440
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  MASTER: 96be77353d6823fc394916652784d3cf85f73e39  # master the PR is measured against
+  BASE440: 949f6662783137e70799a10ab529cb29bf6fa908 # master and #439, under the PR's own commits
+  OLD440: 82666b2d5268d5690fdb329fb68d93810acdfdd1  # 8fa1e72 with #439 and #437, whose level 3 uses gen_icf_map_h1_base()
+  PARENT: 612dd6316d4506f73091ca6e7adfc3fae70bf5ec  # "rewrite the aarch64 level 0 deflate body"
+  MAP: c5feb93bced58a0b7e4b836eedb7afaf1f0186b9     # "speed up aarch64 level 3 match map generation"
+  PR440: 7cb9a1a6d31a089b55b3e09a89a7bbc8edbb7462   # igzip-aarch64-speedups
+
+jobs:
+  bench_arm64:
+    strategy:
+      fail-fast: false
+      matrix:
+        run: [1, 2, 3]
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Install build dependencies
+        run: sudo apt-get update -y && sudo apt-get install -y zlib1g-dev
+      - uses: actions/cache@v4
+        with:
+          path: ~/corpus/silesia.zip
+          key: silesia-zip-1
+      - name: Unpack the Silesia corpus
+        run: bash .github/bench/corpus.sh
+      - name: Build
+        run: bash .github/bench/prepare.sh master:$MASTER pr440:$PR440 parent:$PARENT map:$MAP
+      - name: Benchmark
+        run: |
+          out=$HOME/results
+          mkdir -p $out
+          bash .github/bench/cpu.sh | tee $out/cpu.txt
+          gcc -O2 -I ~/isal/master/include .github/bench/ab.c -o ab -ldl -lz
+          # Two libraries per run: a third one in the middle slot reads low
+          for i in 1 2 3; do
+            ./ab -r 11 ~/isal/master/bin/libisal.so ~/isal/pr440/bin/libisal.so \
+              -- ~/corpus/silesia.tar ~/corpus/silesia/* | tee $out/ab.$i.txt
+          done
+          for i in 1 2 3; do
+            ./ab -r 11 -c "defl L3" ~/isal/parent/bin/libisal.so ~/isal/map/bin/libisal.so \
+              -- ~/corpus/silesia.tar ~/corpus/silesia/* | tee $out/map.$i.txt
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: arm64-${{ matrix.run }}
+          path: ~/results
+
+  scan_arm64:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Install build dependencies
+        run: sudo apt-get update -y && sudo apt-get install -y zlib1g-dev
+      - uses: actions/cache@v4
+        with:
+          path: ~/corpus/silesia.zip
+          key: silesia-zip-1
+      - name: Unpack the Silesia corpus
+        run: bash .github/bench/corpus.sh
+      - name: Build
+        run: bash .github/bench/prepare.sh master:$MASTER base440:$BASE440 old440:$OLD440 pr440:$PR440
+      - name: CPU
+        run: bash .github/bench/cpu.sh
+      - name: Scan levels 0 to 3 against 8fa1e72 with #439 and #437
+        run: |
+          gcc -O2 -I ~/isal/master/include .github/bench/scan.c -o scan -ldl -lz
+          ./scan -t 4093 ~/isal/old440/bin/libisal.so ~/isal/pr440/bin/libisal.so -- ~/corpus/silesia.tar
+      - name: Scan levels 0 to 2 against master and #439
+        run: ./scan -t 4093 -l 0,1,2 ~/isal/base440/bin/libisal.so ~/isal/pr440/bin/libisal.so -- ~/corpus/silesia.tar
+      - name: Scan levels 0 to 3 against master
+        run: ./scan -t 4093 ~/isal/master/bin/libisal.so ~/isal/pr440/bin/libisal.so -- ~/corpus/silesia.tar | grep -v '^  L'
+
+  check_arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ env.PR440 }}
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: ci
+      - name: CPU
+        run: bash ci/.github/bench/cpu.sh
+      - name: Build
+        run: |
+          rm -rf ci
+          ./autogen.sh
+          ./configure --prefix ${HOME}/.local
+          bash -c 'make -j $(nproc)'
+      - name: Run extended tests
+        run: bash tools/test_extended.sh
