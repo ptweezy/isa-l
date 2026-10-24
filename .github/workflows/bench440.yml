@@ -11,11 +11,11 @@ permissions:
 
 env:
   MASTER: 96be77353d6823fc394916652784d3cf85f73e39  # master the PR is measured against
-  BASE440: 949f6662783137e70799a10ab529cb29bf6fa908 # master and #439, under the PR's own commits
+  BASE440: c5d4955240594b9807ad4293d5f82130baaac281 # master and #439, under the PR's own commits
   OLD440: 82666b2d5268d5690fdb329fb68d93810acdfdd1  # 8fa1e72 with #439 and #437, whose level 3 uses gen_icf_map_h1_base()
-  PARENT: 612dd6316d4506f73091ca6e7adfc3fae70bf5ec  # "rewrite the aarch64 level 0 deflate body"
-  MAP: c5feb93bced58a0b7e4b836eedb7afaf1f0186b9     # "speed up aarch64 level 3 match map generation"
-  PR440: 7cb9a1a6d31a089b55b3e09a89a7bbc8edbb7462   # igzip-aarch64-speedups
+  PARENT: 67620af07a72f3e641951e3aaae8de6ef7a5c622  # "rewrite the aarch64 level 0 deflate body"
+  MAP: 931e3f8bd8f4ff7de80a6ec807140d1398947586     # "speed up aarch64 level 3 match map generation"
+  PR440: 19e32fea480e54dc8d5d1f6a645aef12a0754694   # igzip-aarch64-speedups
 
 jobs:
   bench_arm64:
