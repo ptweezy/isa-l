@@ -1,0 +1,50 @@
+name: inflate-bench
+
+on:
+  push:
+    branches: [inflate-bench]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-24.04-arm, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - name: Machine
+      run: |
+        uname -a
+        sysctl -n machdep.cpu.brand_string 2>/dev/null || lscpu | grep -E 'Model name|Vendor ID'
+        cc --version
+    - name: Install nasm
+      if: runner.os == 'Linux' && runner.arch == 'X64'
+      run: sudo apt-get install -y nasm
+    - name: Build
+      run: bash build.sh
+    - name: Corpora
+      run: bash tools/corpora.sh
+    - name: Native benchmark
+      run: ./bench --max-mb 256 --dump corpus corpus/SRR2589044_1.fastq corpus/silesia.cat
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.14"
+    - name: Python wheels on the same streams
+      run: |
+        python -m pip install -q isal==1.9.1 zlib-ng==1.1.0
+        python tools/wheels.py corpus/*.ref.gz
+    - name: SIMD symbols in the wheels
+      run: |
+        for m in isal.isal_zlib zlib_ng.zlib_ng; do
+          f=$(python -c "import importlib; print(importlib.import_module('$m').__file__)")
+          echo "== $m: $(basename "$f")"
+          nm "$f" 2>/dev/null | grep -i -E "neon|armv8|acle|pmull|aarch64|avx2|pclmul" | awk '{print $NF}' | sort -u | head -40 || true
+        done
