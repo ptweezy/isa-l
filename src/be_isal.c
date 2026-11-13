@@ -38,21 +38,26 @@ static size_t isal_run(const uint8_t *in, size_t in_len, uint8_t *out,
 		total = out_cap - st.avail_out;
 	} else {
 		do {
+			int fed = 1;
+
 			if (st.avail_in == 0) {
 				size_t n = in_len - in_pos;
 
 				if (n > in_chunk)
 					n = in_chunk;
-				if (n == 0)
-					return BENCH_ERR;
 				st.next_in = (uint8_t *)(in + in_pos);
 				st.avail_in = (uint32_t)n;
 				in_pos += n;
+				fed = n != 0;
 			}
 			st.next_out = out;
 			st.avail_out = (uint32_t)out_chunk;
 			ret = isal_inflate(&st);
 			total += out_chunk - st.avail_out;
+			/* ISA-L may hold output back after it has taken all of the
+			   input: keep calling until a call brings nothing */
+			if (!fed && st.avail_out == out_chunk)
+				return BENCH_ERR;
 		} while (ret == ISAL_DECOMP_OK &&
 			 st.block_state != ISAL_BLOCK_FINISH);
 	}
