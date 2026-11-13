@@ -1,7 +1,7 @@
 /* Native inflate benchmark: one deflate stream, every decompressor.
  *
  *   bench [--max-mb N] [--rounds N] [--level N] [--dump DIR] [--only A,B]
- *         [--cols TEXT] [--prof OUT] FILE...
+ *         [--cols TEXT] [--prof OUT] [--streams N,N,...] FILE...
  *
  * Each FILE is compressed once with a zlib built from source, so every
  * platform decompresses the same bits. Backends are run interleaved, one call
@@ -24,12 +24,14 @@ static const backend_t *const backends[] = {
 };
 #define NB (sizeof(backends) / sizeof(backends[0]))
 
-static const struct {
+#define MAXC 16
+
+static struct {
 	const char *label;
 	int fmt;
 	size_t in_chunk;  /* input bytes per call */
 	size_t out_chunk; /* output room per call; 0: one call, one big buffer */
-} configs[] = {
+} configs[MAXC] = {
 	{ "raw, one call", FMT_RAW, 0, 0 },
 	{ "raw, 128 KiB stream", FMT_RAW, CHUNK, CHUNK },
 	{ "raw, 16 KiB stream", FMT_RAW, 16 * 1024, 16 * 1024 },
@@ -44,7 +46,7 @@ static const struct {
 	{ "zlib, 4 KiB in, 1025 B out", FMT_ZLIB, 4096, 1025 },
 	{ "zlib, 4 KiB in, 257 B out", FMT_ZLIB, 4096, 257 },
 };
-#define NC (sizeof(configs) / sizeof(configs[0]))
+static size_t NC = 10; /* columns in use; --streams replaces them */
 
 static const char *dump_dir; /* --dump DIR: write each reference .gz there */
 static const char *only;     /* --only A,B: run backends whose name contains A or B */
@@ -131,7 +133,7 @@ static void bench_file(const char *path, size_t max, int rounds, int level)
 	size_t n, raw_len, gz_len, zl_len, cap;
 	uint8_t *orig = read_file(path, max, &n);
 	uint8_t *raw, *gz, *zl, *out, *scratch;
-	double best[NB][NC];
+	double best[NB][MAXC];
 	double best_crc[NB], best_adler[NB];
 	uint32_t crc_val[NB], adler_val[NB], ref_crc, ref_adler;
 	size_t b, c;
@@ -314,6 +316,31 @@ static void bench_file(const char *path, size_t max, int rounds, int level)
 	free(scratch);
 }
 
+/* --streams N,N,...: replace the columns by raw streams with N bytes of input
+ * and N bytes of output room per call (at most 128 KiB), to see how the speed
+ * depends on the buffer size. */
+static void set_streams(const char *list)
+{
+	static char labels[MAXC][32];
+
+	NC = 0;
+	while (*list && NC < MAXC) {
+		char *end;
+		unsigned long n = strtoul(list, &end, 10);
+
+		if (end == list || n == 0 || n > CHUNK)
+			die("bad --streams size", list);
+		snprintf(labels[NC], sizeof(labels[NC]), "raw, %lu B stream", n);
+		configs[NC].label = labels[NC];
+		configs[NC].fmt = FMT_RAW;
+		configs[NC].in_chunk = configs[NC].out_chunk = n;
+		NC++;
+		list = *end == ',' ? end + 1 : end;
+	}
+	if (NC == 0)
+		die("--streams needs sizes", NULL);
+}
+
 int main(int argc, char **argv)
 {
 	size_t max = (size_t)128 << 20;
@@ -330,6 +357,8 @@ int main(int argc, char **argv)
 			cols = argv[++i];
 		else if (!strcmp(argv[i], "--prof") && i + 1 < argc)
 			prof = argv[++i];
+		else if (!strcmp(argv[i], "--streams") && i + 1 < argc)
+			set_streams(argv[++i]);
 		else if (!strcmp(argv[i], "--dump") && i + 1 < argc)
 			dump_dir = argv[++i];
 		else if (!strcmp(argv[i], "--only") && i + 1 < argc)
