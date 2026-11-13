@@ -26,16 +26,22 @@ static const backend_t *const backends[] = {
 static const struct {
 	const char *label;
 	int fmt;
-	size_t chunk; /* 0: one call into one big buffer */
+	size_t in_chunk;  /* input bytes per call */
+	size_t out_chunk; /* output room per call; 0: one call, one big buffer */
 } configs[] = {
-	{ "raw, one call", FMT_RAW, 0 },
-	{ "raw, 128 KiB stream", FMT_RAW, CHUNK },
-	{ "raw, 16 KiB stream", FMT_RAW, 16 * 1024 },
-	{ "raw, 1 KiB stream", FMT_RAW, 1024 },
-	{ "gzip, one call", FMT_GZIP, 0 },
-	{ "gzip, 128 KiB stream", FMT_GZIP, CHUNK },
-	{ "zlib, one call", FMT_ZLIB, 0 },
-	{ "zlib, 128 KiB stream", FMT_ZLIB, CHUNK },
+	{ "raw, one call", FMT_RAW, 0, 0 },
+	{ "raw, 128 KiB stream", FMT_RAW, CHUNK, CHUNK },
+	{ "raw, 16 KiB stream", FMT_RAW, 16 * 1024, 16 * 1024 },
+	{ "raw, 1 KiB stream", FMT_RAW, 1024, 1024 },
+	{ "gzip, one call", FMT_GZIP, 0, 0 },
+	{ "gzip, 128 KiB stream", FMT_GZIP, CHUNK, CHUNK },
+	{ "zlib, one call", FMT_ZLIB, 0, 0 },
+	{ "zlib, 128 KiB stream", FMT_ZLIB, CHUNK, CHUNK },
+	/* What libpng asks for: 4 KiB of the IDAT data at a time, and one row
+	   of the image per call. 1025 bytes is a row of 256 RGBA pixels, 257
+	   bytes one of 64. */
+	{ "zlib, 4 KiB in, 1025 B out", FMT_ZLIB, 4096, 1025 },
+	{ "zlib, 4 KiB in, 257 B out", FMT_ZLIB, 4096, 257 },
 };
 #define NC (sizeof(configs) / sizeof(configs[0]))
 
@@ -184,7 +190,7 @@ static void bench_file(const char *path, size_t max, int rounds, int level)
 			int fmt = configs[c].fmt;
 			const uint8_t *in = fmt == FMT_GZIP ? gz : fmt == FMT_ZLIB ? zl : raw;
 			size_t in_len = fmt == FMT_GZIP ? gz_len : fmt == FMT_ZLIB ? zl_len : raw_len;
-			size_t chunk = configs[c].chunk;
+			size_t chunk = configs[c].out_chunk;
 
 			if (!col_selected(c))
 				continue;
@@ -198,7 +204,8 @@ static void bench_file(const char *path, size_t max, int rounds, int level)
 				got = backends[b]->inflate(in, in_len,
 							   chunk ? scratch : out,
 							   chunk ? chunk : n + 64,
-							   configs[c].fmt, chunk, chunk);
+							   configs[c].fmt,
+							   configs[c].in_chunk, chunk);
 				t = now() - t0;
 				if (got == BENCH_UNSUPPORTED) {
 					best[b][c] = -1;
