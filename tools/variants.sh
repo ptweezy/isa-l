@@ -17,6 +17,7 @@ for v in "$@"; do
 	zlib-793) vars="ZLIB_REF=refs/pull/793/head ZLIB_LABEL=PR-793" only="zlib @,system zlib" ;;
 	zlib-v1) vars="ZLIB_REPO=https://github.com/ptweezy/zlib ZLIB_REF=inffast-next ZLIB_LABEL=v1-preload" only="zlib @,system zlib" ;;
 	zlib-v2) vars="ZLIB_REPO=https://github.com/ptweezy/zlib ZLIB_REF=inffast-zng-format ZLIB_LABEL=v2-one-shift" only="zlib @,system zlib" ;;
+	zlib-v3) vars="ZLIB_REPO=https://github.com/ptweezy/zlib ZLIB_REF=inffast-v3 ZLIB_LABEL=v3-combined" only="zlib @,system zlib" ;;
 	*) echo "unknown variant $v" >&2; exit 2 ;;
 	esac
 	if [ "$mode" = build ]; then

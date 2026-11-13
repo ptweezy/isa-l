@@ -18,7 +18,7 @@ jobs:
     timeout-minutes: 60
     env:
       # See tools/variants.sh for the names.
-      VARIANTS: zlib-793 zlib-v1 zlib-v2 zng-dev
+      VARIANTS: zlib-793 zlib-v2 zlib-v3 zng-dev
     steps:
     - uses: actions/checkout@v4
       with:
