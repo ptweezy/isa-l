@@ -41,6 +41,10 @@ static const struct {
 
 static const char *dump_dir; /* --dump DIR: write each reference .gz there */
 static const char *only;     /* --only A,B: run backends whose name contains A or B */
+static const char *cols;     /* --cols TEXT: run only the columns whose label contains TEXT,
+				and skip the checksum table (for profiling one mode) */
+
+static int col_selected(size_t c);
 
 static double now(void)
 {
@@ -69,6 +73,11 @@ static int selected(const char *name)
 		p += len + (p[len] == ',');
 	}
 	return 0;
+}
+
+static int col_selected(size_t c)
+{
+	return !cols || strstr(configs[c].label, cols) != NULL;
 }
 
 static void die(const char *msg, const char *arg)
@@ -177,6 +186,8 @@ static void bench_file(const char *path, size_t max, int rounds, int level)
 			size_t in_len = fmt == FMT_GZIP ? gz_len : fmt == FMT_ZLIB ? zl_len : raw_len;
 			size_t chunk = configs[c].chunk;
 
+			if (!col_selected(c))
+				continue;
 			for (b = 0; b < NB; b++) {
 				double t0, t;
 				size_t got;
@@ -208,7 +219,7 @@ static void bench_file(const char *path, size_t max, int rounds, int level)
 		for (b = 0; b < NB; b++) {
 			double t0, t;
 
-			if (!selected(backends[b]->name))
+			if (!selected(backends[b]->name) || cols)
 				continue;
 			if (backends[b]->crc32) {
 				t0 = now();
@@ -233,16 +244,20 @@ static void bench_file(const char *path, size_t max, int rounds, int level)
 	printf("Inflate, MB/s of output, best of %d interleaved rounds:\n\n", rounds);
 	printf("| backend | version |");
 	for (c = 0; c < NC; c++)
-		printf(" %s |", configs[c].label);
+		if (col_selected(c))
+			printf(" %s |", configs[c].label);
 	printf("\n|---|---|");
 	for (c = 0; c < NC; c++)
-		printf("---:|");
+		if (col_selected(c))
+			printf("---:|");
 	printf("\n");
 	for (b = 0; b < NB; b++) {
 		if (!selected(backends[b]->name))
 			continue;
 		printf("| %s | %s |", backends[b]->name, backends[b]->version());
 		for (c = 0; c < NC; c++) {
+			if (!col_selected(c))
+				continue;
 			if (best[b][c] > 0)
 				printf(" %.0f |", (double)n / 1e6 / best[b][c]);
 			else if (best[b][c] == -1)
@@ -253,10 +268,13 @@ static void bench_file(const char *path, size_t max, int rounds, int level)
 		printf("\n");
 	}
 
-	printf("\nChecksums over the uncompressed data, GB/s:\n\n");
-	printf("| backend | CRC-32 | Adler-32 |\n|---|---:|---:|\n");
+	if (!cols) {
+		printf("\nChecksums over the uncompressed data, GB/s:\n\n");
+		printf("| backend | CRC-32 | Adler-32 |\n|---|---:|---:|\n");
+	}
 	for (b = 0; b < NB; b++) {
-		if ((!backends[b]->crc32 && !backends[b]->adler32) || !selected(backends[b]->name))
+		if ((!backends[b]->crc32 && !backends[b]->adler32) ||
+		    !selected(backends[b]->name) || cols)
 			continue;
 		printf("| %s |", backends[b]->name);
 		if (backends[b]->crc32)
@@ -293,6 +311,8 @@ int main(int argc, char **argv)
 			rounds = atoi(argv[++i]);
 		else if (!strcmp(argv[i], "--level") && i + 1 < argc)
 			level = atoi(argv[++i]);
+		else if (!strcmp(argv[i], "--cols") && i + 1 < argc)
+			cols = argv[++i];
 		else if (!strcmp(argv[i], "--dump") && i + 1 < argc)
 			dump_dir = argv[++i];
 		else if (!strcmp(argv[i], "--only") && i + 1 < argc)
