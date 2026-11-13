@@ -46,3 +46,8 @@ uint32_t ref_crc32(const uint8_t *buf, size_t len)
 {
 	return zl_crc32(buf, len);
 }
+
+uint32_t ref_adler32(const uint8_t *buf, size_t len)
+{
+	return zl_adler32(buf, len);
+}

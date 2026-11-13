@@ -32,6 +32,8 @@ static const struct {
 	{ "raw, 128 KiB stream", FMT_RAW, CHUNK },
 	{ "gzip, one call", FMT_GZIP, 0 },
 	{ "gzip, 128 KiB stream", FMT_GZIP, CHUNK },
+	{ "zlib, one call", FMT_ZLIB, 0 },
+	{ "zlib, 128 KiB stream", FMT_ZLIB, CHUNK },
 };
 #define NC (sizeof(configs) / sizeof(configs[0]))
 
@@ -106,9 +108,9 @@ static const char *base_name(const char *path)
 static void bench_file(const char *path, size_t max, int rounds, int level)
 {
 	static const uint8_t gz_header[10] = { 0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 3 };
-	size_t n, raw_len, gz_len, cap;
+	size_t n, raw_len, gz_len, zl_len, cap;
 	uint8_t *orig = read_file(path, max, &n);
-	uint8_t *raw, *gz, *out, *scratch;
+	uint8_t *raw, *gz, *zl, *out, *scratch;
 	double best[NB][NC];
 	double best_crc[NB], best_adler[NB];
 	uint32_t crc_val[NB], adler_val[NB], ref_crc, ref_adler;
@@ -120,9 +122,10 @@ static void bench_file(const char *path, size_t max, int rounds, int level)
 	cap = n + n / 8 + 4096;
 	raw = malloc(cap);
 	gz = malloc(cap + 18);
+	zl = malloc(cap + 6);
 	out = malloc(n + 64);
 	scratch = malloc(CHUNK);
-	if (!raw || !gz || !out || !scratch)
+	if (!raw || !gz || !zl || !out || !scratch)
 		die("out of memory", NULL);
 
 	raw_len = ref_deflate_raw(orig, n, raw, cap, level);
@@ -133,6 +136,18 @@ static void bench_file(const char *path, size_t max, int rounds, int level)
 	put32le(gz + 10 + raw_len, ref_crc32(orig, n));
 	put32le(gz + 14 + raw_len, (uint32_t)n);
 	gz_len = raw_len + 18;
+	zl[0] = 0x78;
+	zl[1] = 0x9c;
+	memcpy(zl + 2, raw, raw_len);
+	{
+		uint32_t a = ref_adler32(orig, n);
+
+		zl[2 + raw_len] = (uint8_t)(a >> 24);
+		zl[3 + raw_len] = (uint8_t)(a >> 16);
+		zl[4 + raw_len] = (uint8_t)(a >> 8);
+		zl[5 + raw_len] = (uint8_t)a;
+	}
+	zl_len = raw_len + 6;
 	ref_crc = ref_crc32(orig, n);
 	ref_adler = be_madler.adler32(orig, n);
 
@@ -155,8 +170,9 @@ static void bench_file(const char *path, size_t max, int rounds, int level)
 
 	for (r = 0; r < rounds; r++) {
 		for (c = 0; c < NC; c++) {
-			const uint8_t *in = configs[c].fmt == FMT_GZIP ? gz : raw;
-			size_t in_len = configs[c].fmt == FMT_GZIP ? gz_len : raw_len;
+			int fmt = configs[c].fmt;
+			const uint8_t *in = fmt == FMT_GZIP ? gz : fmt == FMT_ZLIB ? zl : raw;
+			size_t in_len = fmt == FMT_GZIP ? gz_len : fmt == FMT_ZLIB ? zl_len : raw_len;
 			size_t chunk = configs[c].chunk;
 
 			for (b = 0; b < NB; b++) {
@@ -258,6 +274,7 @@ static void bench_file(const char *path, size_t max, int rounds, int level)
 	free(orig);
 	free(raw);
 	free(gz);
+	free(zl);
 	free(out);
 	free(scratch);
 }

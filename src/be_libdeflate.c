@@ -22,7 +22,10 @@ static size_t ld_run(const uint8_t *in, size_t in_len, uint8_t *out,
 		return BENCH_UNSUPPORTED;
 	if (!d)
 		d = libdeflate_alloc_decompressor();
-	if (fmt == FMT_GZIP)
+	if (fmt == FMT_ZLIB)
+		r = libdeflate_zlib_decompress(d, in, in_len, out, out_cap,
+					       &actual);
+	else if (fmt == FMT_GZIP)
 		r = libdeflate_gzip_decompress(d, in, in_len, out, out_cap,
 					       &actual);
 	else

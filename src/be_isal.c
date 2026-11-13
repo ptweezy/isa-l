@@ -26,7 +26,8 @@ static size_t isal_run(const uint8_t *in, size_t in_len, uint8_t *out,
 	int ret;
 
 	isal_inflate_init(&st);
-	st.crc_flag = fmt == FMT_GZIP ? ISAL_GZIP : ISAL_DEFLATE;
+	st.crc_flag = fmt == FMT_GZIP ? ISAL_GZIP :
+		      fmt == FMT_ZLIB ? ISAL_ZLIB : ISAL_DEFLATE;
 
 	if (out_chunk == 0) {
 		st.next_in = (uint8_t *)in;
@@ -68,7 +69,8 @@ static size_t isal_run_stateless(const uint8_t *in, size_t in_len,
 	if (out_chunk != 0)
 		return BENCH_UNSUPPORTED;
 	isal_inflate_init(&st);
-	st.crc_flag = fmt == FMT_GZIP ? ISAL_GZIP : ISAL_DEFLATE;
+	st.crc_flag = fmt == FMT_GZIP ? ISAL_GZIP :
+		      fmt == FMT_ZLIB ? ISAL_ZLIB : ISAL_DEFLATE;
 	st.next_in = (uint8_t *)in;
 	st.avail_in = (uint32_t)in_len;
 	st.next_out = out;

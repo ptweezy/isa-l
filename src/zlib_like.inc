@@ -18,7 +18,7 @@ static size_t zl_inflate(const uint8_t *in, size_t in_len, uint8_t *out,
 	int ret;
 
 	memset(&s, 0, sizeof(s));
-	if (ZL_INIT2(&s, fmt == FMT_GZIP ? 31 : -15) != Z_OK)
+	if (ZL_INIT2(&s, fmt == FMT_GZIP ? 31 : fmt == FMT_ZLIB ? 15 : -15) != Z_OK)
 		return BENCH_ERR;
 
 	if (out_chunk == 0) {

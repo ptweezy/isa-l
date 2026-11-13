@@ -9,6 +9,7 @@
 
 #define FMT_RAW 0  /* raw deflate, no checksum */
 #define FMT_GZIP 1 /* gzip wrapper, CRC-32 verified */
+#define FMT_ZLIB 2 /* zlib wrapper, Adler-32 verified */
 
 #define BENCH_ERR ((size_t)-1)
 #define BENCH_UNSUPPORTED ((size_t)-2)
@@ -42,5 +43,6 @@ extern const backend_t be_apple_compression;
 size_t ref_deflate_raw(const uint8_t *in, size_t in_len, uint8_t *out,
 		       size_t out_cap, int level);
 uint32_t ref_crc32(const uint8_t *buf, size_t len);
+uint32_t ref_adler32(const uint8_t *buf, size_t len);
 
 #endif
