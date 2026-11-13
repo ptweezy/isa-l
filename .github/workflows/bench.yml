@@ -18,7 +18,7 @@ jobs:
     timeout-minutes: 60
     env:
       # See tools/variants.sh for the names.
-      VARIANTS: zlib-793 zlib-v8 zlib-v12 zlib-v13 zng-dev
+      VARIANTS: zlib-v12 zlib-v13 zlib-v14n
     steps:
     - uses: actions/checkout@v4
       with:
@@ -43,6 +43,12 @@ jobs:
       run: bash tools/corpora.sh
     - name: Native benchmark
       run: ./bench --max-mb 256 --dump corpus corpus/SRR2589044_1.fastq corpus/silesia.cat
+    - name: Buffer-size sweep, masks (v13) against a branch (v14n)
+      run: |
+        for v in v13 v14n v14n v13; do
+          echo "#### variant: zlib-$v"
+          ./bench-zlib-$v --max-mb 256 --rounds 5 --only "zlib @" --streams 256,512,1024,2048,4096,8192,16384,32768,65536,131072 corpus/SRR2589044_1.fastq corpus/silesia.cat
+        done
     - name: Native benchmark, variants (system zlib repeated as a control)
       run: bash tools/variants.sh run $VARIANTS
     - uses: actions/setup-python@v5
