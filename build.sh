@@ -83,6 +83,7 @@ mkdir -p "$OBJ"
 CFLAGS="-O2 -std=c11 -Wall -Wextra -I$ROOT/src"
 isal_ver="${ISAL_REF#v} ($(git -C "$OTHERS/isa-l" rev-parse --short HEAD))"
 $CC $CFLAGS -c "$ROOT/src/main.c" -o "$OBJ/main.o"
+$CC $CFLAGS -c "$ROOT/src/prof.c" -o "$OBJ/prof.o"
 $CC $CFLAGS -c "$ROOT/src/be_syszlib.c" -o "$OBJ/be_syszlib.o"
 $CC $CFLAGS -I"$WORK/zlib" -DZ_PREFIX -DMADLER_NAME="\"zlib @$ZLIB_LABEL\"" -c "$ROOT/src/be_madler.c" -o "$OBJ/be_madler.o"
 $CC $CFLAGS -Wno-deprecated-declarations -I"$OTHERS/zlib-ng/build" -I"$OTHERS/zlib-ng" \

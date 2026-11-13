@@ -1,143 +1,130 @@
 #!/usr/bin/env python3
-"""Rank the hottest instructions in a sample(1) report.
+"""Rank the hottest instructions in a profile written by `bench --prof`.
 
-    hot.py REPORT.sample BINARY [TOP]
+    hot.py PROFILE BINARY [TOP]
 
-sample(1) prints a call tree in which every line is
-    <count> <symbol>  (in <image>) + <offset>  [<address>]
-and a line's own samples are its count less the counts of its children. This
-adds up the own samples per (symbol, offset), prints the share of each
-function, and, for functions in BINARY, the disassembly of the hottest
-stretches with a sample count on every instruction.
+PROFILE has one "address count" line per instruction that was seen running,
+and the address of prof_start() in the running process, from which the load
+address of BINARY follows. This prints the share of each function, and for
+the hottest functions of BINARY the disassembly around the hottest
+instructions, with the samples of every instruction next to it.
 
-Functions in system libraries are listed with their offsets only: they are
-not disassembled.
+Addresses outside BINARY (shared libraries) are counted together and are not
+disassembled.
+
+The interrupt usually lands one or two instructions after the one that was
+slow, so read a count as "here or just before".
 """
+import bisect
 import collections
 import re
 import subprocess
 import sys
 
-LINE = re.compile(
-    r"^(?P<lead>[\s+!:|]*)(?P<n>\d+)\s+(?P<sym>.+?)\s+\(in (?P<img>[^)]+)\)"
-    r"(?:\s+\+\s+(?P<off>\d+))?(?:.*?\[(?P<addr>0x[0-9a-f]+)\])?"
-)
+
+def run(*cmd):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True).stdout
+    except OSError:
+        return ""
 
 
-def parse(path):
-    """Yield (depth, count, symbol, image, offset) for the heaviest thread."""
-    rows = []
-    in_tree = False
-    for line in open(path, errors="replace"):
-        if line.startswith("Call graph:"):
-            in_tree = True
-            continue
-        if in_tree and (line.startswith("Total number in stack")
-                        or line.startswith("Sort by top of stack")):
-            break
-        if not in_tree:
-            continue
-        m = LINE.match(line.rstrip("\n"))
-        if not m:
-            continue
-        depth = len(m.group("lead"))
-        rows.append((depth, int(m.group("n")), m.group("sym"), m.group("img"),
-                     int(m.group("off") or 0)))
-    return rows
-
-
-def own_counts(rows):
-    """Own samples per (image, symbol, offset): count less direct children."""
-    own = collections.Counter()
-    for i, (depth, n, sym, img, off) in enumerate(rows):
-        kids = 0
-        child_depth = None
-        for d2, n2, _, _, _ in rows[i + 1:]:
-            if d2 <= depth:
-                break
-            if child_depth is None:
-                child_depth = d2
-            if d2 == child_depth:
-                kids += n2
-        if n - kids > 0:
-            own[(img, sym, off)] += n - kids
-    return own
+def symbols(binary):
+    """Sorted [(address, name)] of the functions in the binary."""
+    out = []
+    for line in run("nm", "-n", binary).splitlines():
+        m = re.match(r"^([0-9a-fA-F]+)\s+([tT])\s+(\S+)$", line)
+        if m:
+            out.append((int(m.group(1), 16), m.group(3).lstrip("_")))
+    return sorted(out)
 
 
 def disassemble(binary):
-    """Map symbol -> list of (offset, text) from otool."""
-    try:
-        text = subprocess.run(["otool", "-tvV", binary], capture_output=True,
-                              text=True, check=True).stdout
-    except (OSError, subprocess.CalledProcessError):
-        return {}
-    funcs = {}
-    cur = None
-    base = None
-    for line in text.splitlines():
-        if line.endswith(":") and not line.startswith(("0", " ", "\t")):
-            cur = line[:-1].lstrip("_")
-            funcs[cur] = []
-            base = None
-            continue
-        m = re.match(r"^([0-9a-f]{8,16})\s+(.*)$", line)
-        if m and cur is not None:
-            addr = int(m.group(1), 16)
-            if base is None:
-                base = addr
-            funcs[cur].append((addr - base, m.group(2).strip()))
-    return funcs
+    """{address: text} for every instruction, from otool or objdump."""
+    insns = {}
+    text = run("otool", "-tvV", binary)
+    if text.strip():
+        for line in text.splitlines():
+            m = re.match(r"^([0-9a-f]{8,16})\s+(.*)$", line)
+            if m:
+                insns[int(m.group(1), 16)] = m.group(2).strip()
+        if insns:
+            return insns
+    for line in run("objdump", "-d", "--no-show-raw-insn", binary).splitlines():
+        m = re.match(r"^\s*([0-9a-f]+):\s+(.*)$", line)
+        if m:
+            insns[int(m.group(1), 16)] = m.group(2).strip()
+    return insns
 
 
 def main():
-    report, binary = sys.argv[1], sys.argv[2]
-    top = int(sys.argv[3]) if len(sys.argv) > 3 else 40
-    own = own_counts(parse(report))
-    total = sum(own.values())
+    profile, binary = sys.argv[1], sys.argv[2]
+    top = int(sys.argv[3]) if len(sys.argv) > 3 else 60
+    counts = {}
+    ref = None
+    lost = 0
+    for line in open(profile):
+        f = line.split()
+        if f[0] == "ref":
+            ref = (f[1], int(f[2], 16))
+        elif f[0] == "lost":
+            lost = int(f[1])
+        else:
+            counts[int(f[0], 16)] = int(f[1])
+    total = sum(counts.values())
     if not total:
-        sys.exit("no samples parsed from " + report)
+        sys.exit("no samples in " + profile)
+
+    syms = symbols(binary)
+    names = {name: addr for addr, name in syms}
+    if not ref or ref[0] not in names:
+        sys.exit("cannot find %s in %s" % (ref[0] if ref else "ref", binary))
+    slide = ref[1] - names[ref[0]]
+    addrs = [a for a, _ in syms]
+    lo, hi = addrs[0], addrs[-1] + 0x10000
 
     per_func = collections.Counter()
-    for (img, sym, off), n in own.items():
-        per_func[(img, sym)] += n
+    per_insn = collections.defaultdict(dict)
+    for pc, n in counts.items():
+        a = pc - slide
+        if lo <= a < hi:
+            i = bisect.bisect_right(addrs, a) - 1
+            name = syms[i][1]
+            per_insn[name][a] = per_insn[name].get(a, 0) + n
+        else:
+            name = "(outside the binary)"
+        per_func[name] += n
 
-    print("samples: %d" % total)
-    print("\nfunctions (own samples):")
-    for (img, sym), n in per_func.most_common(12):
-        print("  %5.1f%%  %-40s %s" % (100.0 * n / total, sym, img))
+    print("samples: %d%s" % (total, " (%d lost)" % lost if lost else ""))
+    print("\nfunctions:")
+    for name, n in per_func.most_common(12):
+        print("  %5.1f%%  %s" % (100.0 * n / total, name))
 
-    funcs = disassemble(binary)
-    for (img, sym), n in per_func.most_common(6):
-        if 100.0 * n / total < 2.0:
-            break
-        offs = {off: c for (i, s, off), c in own.items() if (i, s) == (img, sym)}
-        print("\n== %s (%s): %.1f%% of samples ==" % (sym, img, 100.0 * n / total))
-        code = funcs.get(sym.lstrip("_"))
-        if not code:
-            for off, c in sorted(offs.items(), key=lambda kv: -kv[1])[:top]:
-                print("  +%-6d %6d  %5.2f%%" % (off, c, 100.0 * c / total))
+    insns = disassemble(binary)
+    order = sorted(insns)
+    index = {a: i for i, a in enumerate(order)}
+    for name, n in per_func.most_common(4):
+        if 100.0 * n / total < 3.0 or name not in per_insn:
             continue
-        # sample(1) reports the address of the instruction that was running,
-        # and a slow instruction is usually blamed on the one after it.
-        index = {off: i for i, (off, _) in enumerate(code)}
-        hot = sorted(offs.items(), key=lambda kv: -kv[1])[:top]
+        mine = per_insn[name]
+        start = names[name]
+        print("\n== %s: %.1f%% of samples ==" % (name, 100.0 * n / total))
         show = set()
-        for off, _ in hot:
-            i = index.get(off)
+        for a, _ in sorted(mine.items(), key=lambda kv: -kv[1])[:top]:
+            i = index.get(a)
             if i is None:
                 continue
-            for j in range(max(0, i - 3), min(len(code), i + 3)):
-                show.add(j)
+            show.update(range(max(0, i - 4), min(len(order), i + 3)))
         prev = None
-        for j in sorted(show):
-            if prev is not None and j != prev + 1:
+        for i in sorted(show):
+            if prev is not None and i != prev + 1:
                 print("        ...")
-            off, text = code[j]
-            c = offs.get(off, 0)
+            a = order[i]
+            c = mine.get(a, 0)
             print("  +%-6d %6s %6s  %s" % (
-                off, c if c else "", ("%.2f%%" % (100.0 * c / total)) if c else "",
-                text))
-            prev = j
+                a - start, c if c else "",
+                ("%.2f%%" % (100.0 * c / total)) if c else "", insns[a]))
+            prev = i
 
 
 if __name__ == "__main__":

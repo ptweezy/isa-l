@@ -45,4 +45,10 @@ size_t ref_deflate_raw(const uint8_t *in, size_t in_len, uint8_t *out,
 uint32_t ref_crc32(const uint8_t *buf, size_t len);
 uint32_t ref_adler32(const uint8_t *buf, size_t len);
 
+/* Sampling profiler (prof.c): count the running instruction every half
+ * millisecond between prof_start() and prof_stop(). */
+void prof_start(void);
+void prof_stop(void);
+int prof_write(const char *path);
+
 #endif

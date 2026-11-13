@@ -1,6 +1,7 @@
 /* Native inflate benchmark: one deflate stream, every decompressor.
  *
- *   bench [--max-mb N] [--rounds N] [--level N] [--dump DIR] [--only A,B] FILE...
+ *   bench [--max-mb N] [--rounds N] [--level N] [--dump DIR] [--only A,B]
+ *         [--cols TEXT] [--prof OUT] FILE...
  *
  * Each FILE is compressed once with a zlib built from source, so every
  * platform decompresses the same bits. Backends are run interleaved, one call
@@ -49,6 +50,8 @@ static const char *dump_dir; /* --dump DIR: write each reference .gz there */
 static const char *only;     /* --only A,B: run backends whose name contains A or B */
 static const char *cols;     /* --cols TEXT: run only the columns whose label contains TEXT,
 				and skip the checksum table (for profiling one mode) */
+
+static const char *prof;     /* --prof OUT: sample the decoding, write the counts there */
 
 static int col_selected(size_t c);
 
@@ -185,6 +188,8 @@ static void bench_file(const char *path, size_t max, int rounds, int level)
 		best_crc[b] = best_adler[b] = 0;
 	}
 
+	if (prof)
+		prof_start();
 	for (r = 0; r < rounds; r++) {
 		for (c = 0; c < NC; c++) {
 			int fmt = configs[c].fmt;
@@ -244,6 +249,9 @@ static void bench_file(const char *path, size_t max, int rounds, int level)
 			}
 		}
 	}
+
+	if (prof)
+		prof_stop();
 
 	printf("\n### %s: %.1f MB, deflate level %d to %.1f MB (%.1f%%)\n\n",
 	       base_name(path), (double)n / 1e6, level, (double)raw_len / 1e6,
@@ -320,6 +328,8 @@ int main(int argc, char **argv)
 			level = atoi(argv[++i]);
 		else if (!strcmp(argv[i], "--cols") && i + 1 < argc)
 			cols = argv[++i];
+		else if (!strcmp(argv[i], "--prof") && i + 1 < argc)
+			prof = argv[++i];
 		else if (!strcmp(argv[i], "--dump") && i + 1 < argc)
 			dump_dir = argv[++i];
 		else if (!strcmp(argv[i], "--only") && i + 1 < argc)
@@ -331,5 +341,7 @@ int main(int argc, char **argv)
 	}
 	if (!files)
 		die("usage: bench [--max-mb N] [--rounds N] [--level N] FILE...", NULL);
+	if (prof && prof_write(prof) != 0)
+		die("cannot write", prof);
 	return 0;
 }
