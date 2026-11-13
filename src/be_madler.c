@@ -16,7 +16,10 @@
 #define ZL_ADLER32 adler32
 #define ZL_VERSION zlibVersion
 #define ZL_SYMBOL be_madler
-#define ZL_NAME "zlib (from source)"
+#ifndef MADLER_NAME
+#define MADLER_NAME "zlib (from source)"
+#endif
+#define ZL_NAME MADLER_NAME
 
 #include "zlib_like.inc"
 

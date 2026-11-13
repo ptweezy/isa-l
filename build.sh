@@ -13,6 +13,7 @@ OUT=${OUT:-$ROOT/bench}
 
 ZLIB_REPO=${ZLIB_REPO:-https://github.com/madler/zlib}
 ZLIB_REF=${ZLIB_REF:-v1.4}
+ZLIB_LABEL=${ZLIB_LABEL:-$ZLIB_REF}
 ZNG_REPO=${ZNG_REPO:-https://github.com/zlib-ng/zlib-ng}
 ZNG_REF=${ZNG_REF:-2.3.3}
 ISAL_REPO=${ISAL_REPO:-https://github.com/intel/isa-l}
@@ -75,7 +76,7 @@ CFLAGS="-O2 -std=c11 -Wall -Wextra -I$ROOT/src"
 isal_ver="${ISAL_REF#v} ($(git -C "$WORK/isa-l" rev-parse --short HEAD))"
 $CC $CFLAGS -c "$ROOT/src/main.c" -o "$OBJ/main.o"
 $CC $CFLAGS -c "$ROOT/src/be_syszlib.c" -o "$OBJ/be_syszlib.o"
-$CC $CFLAGS -I"$WORK/zlib" -DZ_PREFIX -c "$ROOT/src/be_madler.c" -o "$OBJ/be_madler.o"
+$CC $CFLAGS -I"$WORK/zlib" -DZ_PREFIX -DMADLER_NAME="\"zlib @$ZLIB_LABEL\"" -c "$ROOT/src/be_madler.c" -o "$OBJ/be_madler.o"
 $CC $CFLAGS -Wno-deprecated-declarations -I"$WORK/zlib-ng/build" -I"$WORK/zlib-ng" \
 	-DZNG_NAME="\"zlib-ng @$ZNG_REF\"" -c "$ROOT/src/be_zng.c" -o "$OBJ/be_zng.o"
 $CC $CFLAGS -I"$WORK/isa-l/include" -DISAL_VERSION_STR="\"$isal_ver\"" -c "$ROOT/src/be_isal.c" -o "$OBJ/be_isal.o"
