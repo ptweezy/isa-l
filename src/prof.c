@@ -10,7 +10,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/time.h>
+#if defined(__APPLE__)
+#include <sys/ucontext.h> /* <ucontext.h> there wants _XOPEN_SOURCE */
+#else
 #include <ucontext.h>
+#endif
 
 #include "backends.h"
 
