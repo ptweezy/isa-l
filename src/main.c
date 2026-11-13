@@ -30,6 +30,8 @@ static const struct {
 } configs[] = {
 	{ "raw, one call", FMT_RAW, 0 },
 	{ "raw, 128 KiB stream", FMT_RAW, CHUNK },
+	{ "raw, 16 KiB stream", FMT_RAW, 16 * 1024 },
+	{ "raw, 1 KiB stream", FMT_RAW, 1024 },
 	{ "gzip, one call", FMT_GZIP, 0 },
 	{ "gzip, 128 KiB stream", FMT_GZIP, CHUNK },
 	{ "zlib, one call", FMT_ZLIB, 0 },
