@@ -1,3 +1,5 @@
 work/
+work-*/
 corpus/
 bench
+bench-*

@@ -30,10 +30,18 @@ jobs:
       run: sudo apt-get install -y nasm
     - name: Build
       run: bash build.sh
+    - name: Build again with zlib-ng develop
+      run: ZNG_REF=develop WORK=$PWD/work-zng-dev OUT=$PWD/bench-zng-dev bash build.sh
+    - uses: actions/cache@v4
+      with:
+        path: corpus
+        key: corpora-v1
     - name: Corpora
       run: bash tools/corpora.sh
     - name: Native benchmark
       run: ./bench --max-mb 256 --dump corpus corpus/SRR2589044_1.fastq corpus/silesia.cat
+    - name: Native benchmark, zlib-ng develop (system zlib repeated as a control)
+      run: ./bench-zng-dev --max-mb 256 --only "zlib-ng,system zlib" corpus/SRR2589044_1.fastq corpus/silesia.cat
     - uses: actions/setup-python@v5
       with:
         python-version: "3.14"

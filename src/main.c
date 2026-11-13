@@ -1,6 +1,6 @@
 /* Native inflate benchmark: one deflate stream, every decompressor.
  *
- *   bench [--max-mb N] [--rounds N] [--level N] [--dump DIR] FILE...
+ *   bench [--max-mb N] [--rounds N] [--level N] [--dump DIR] [--only A,B] FILE...
  *
  * Each FILE is compressed once with a zlib built from source, so every
  * platform decompresses the same bits. Backends are run interleaved, one call
@@ -16,8 +16,7 @@
 #define CHUNK (128 * 1024)
 
 static const backend_t *const backends[] = {
-	&be_syszlib,	    &be_madler,	    &be_zng, &be_isal,
-	&be_isal_stateless, &be_libdeflate,
+	&be_syszlib, &be_madler, &be_zng, &be_isal, &be_isal_stateless, &be_libdeflate,
 #ifdef __APPLE__
 	&be_apple_compression,
 #endif
@@ -37,6 +36,7 @@ static const struct {
 #define NC (sizeof(configs) / sizeof(configs[0]))
 
 static const char *dump_dir; /* --dump DIR: write each reference .gz there */
+static const char *only;     /* --only A,B: run backends whose name contains A or B */
 
 static double now(void)
 {
@@ -44,6 +44,27 @@ static double now(void)
 
 	clock_gettime(CLOCK_MONOTONIC, &t);
 	return (double)t.tv_sec + (double)t.tv_nsec * 1e-9;
+}
+
+static int selected(const char *name)
+{
+	const char *p = only;
+
+	if (!only)
+		return 1;
+	while (*p) {
+		size_t len = strcspn(p, ",");
+		char pat[64];
+
+		if (len > 0 && len < sizeof(pat)) {
+			memcpy(pat, p, len);
+			pat[len] = 0;
+			if (strstr(name, pat))
+				return 1;
+		}
+		p += len + (p[len] == ',');
+	}
+	return 0;
 }
 
 static void die(const char *msg, const char *arg)
@@ -90,7 +111,7 @@ static void bench_file(const char *path, size_t max, int rounds, int level)
 	uint8_t *raw, *gz, *out, *scratch;
 	double best[NB][NC];
 	double best_crc[NB], best_adler[NB];
-	uint32_t crc_val[NB], adler_val[NB];
+	uint32_t crc_val[NB], adler_val[NB], ref_crc, ref_adler;
 	size_t b, c;
 	int r;
 
@@ -112,6 +133,8 @@ static void bench_file(const char *path, size_t max, int rounds, int level)
 	put32le(gz + 10 + raw_len, ref_crc32(orig, n));
 	put32le(gz + 14 + raw_len, (uint32_t)n);
 	gz_len = raw_len + 18;
+	ref_crc = ref_crc32(orig, n);
+	ref_adler = be_madler.adler32(orig, n);
 
 	if (dump_dir) {
 		char name[4096];
@@ -126,7 +149,7 @@ static void bench_file(const char *path, size_t max, int rounds, int level)
 
 	for (b = 0; b < NB; b++) {
 		for (c = 0; c < NC; c++)
-			best[b][c] = 0;
+			best[b][c] = selected(backends[b]->name) ? 0 : -3;
 		best_crc[b] = best_adler[b] = 0;
 	}
 
@@ -167,6 +190,8 @@ static void bench_file(const char *path, size_t max, int rounds, int level)
 		for (b = 0; b < NB; b++) {
 			double t0, t;
 
+			if (!selected(backends[b]->name))
+				continue;
 			if (backends[b]->crc32) {
 				t0 = now();
 				crc_val[b] = backends[b]->crc32(orig, n);
@@ -196,6 +221,8 @@ static void bench_file(const char *path, size_t max, int rounds, int level)
 		printf("---:|");
 	printf("\n");
 	for (b = 0; b < NB; b++) {
+		if (!selected(backends[b]->name))
+			continue;
 		printf("| %s | %s |", backends[b]->name, backends[b]->version());
 		for (c = 0; c < NC; c++) {
 			if (best[b][c] > 0)
@@ -211,17 +238,17 @@ static void bench_file(const char *path, size_t max, int rounds, int level)
 	printf("\nChecksums over the uncompressed data, GB/s:\n\n");
 	printf("| backend | CRC-32 | Adler-32 |\n|---|---:|---:|\n");
 	for (b = 0; b < NB; b++) {
-		if (!backends[b]->crc32 && !backends[b]->adler32)
+		if ((!backends[b]->crc32 && !backends[b]->adler32) || !selected(backends[b]->name))
 			continue;
 		printf("| %s |", backends[b]->name);
 		if (backends[b]->crc32)
 			printf(" %.1f%s |", (double)n / 1e9 / best_crc[b],
-			       crc_val[b] == crc_val[1] ? "" : " (WRONG)");
+			       crc_val[b] == ref_crc ? "" : " (WRONG)");
 		else
 			printf(" n/a |");
 		if (backends[b]->adler32)
 			printf(" %.1f%s |", (double)n / 1e9 / best_adler[b],
-			       adler_val[b] == adler_val[1] ? "" : " (WRONG)");
+			       adler_val[b] == ref_adler ? "" : " (WRONG)");
 		else
 			printf(" n/a |");
 		printf("\n");
@@ -249,6 +276,8 @@ int main(int argc, char **argv)
 			level = atoi(argv[++i]);
 		else if (!strcmp(argv[i], "--dump") && i + 1 < argc)
 			dump_dir = argv[++i];
+		else if (!strcmp(argv[i], "--only") && i + 1 < argc)
+			only = argv[++i];
 		else {
 			bench_file(argv[i], max, rounds, level);
 			files++;

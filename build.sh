@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # Fetch each library at a pinned ref, build it with its own release settings,
-# and link the benchmark. Override a *_REPO / *_REF variable to test a branch.
+# and link the benchmark. Override a *_REPO / *_REF variable to test a branch,
+# with WORK and OUT set so that it gets its own build tree and binary:
+#   ZNG_REF=develop WORK=work-zng-dev OUT=bench-zng-dev ./build.sh
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")" && pwd)
 WORK=${WORK:-$ROOT/work}
 JOBS=${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}
 CC=${CC:-cc}
+OUT=${OUT:-$ROOT/bench}
 
 ZLIB_REPO=${ZLIB_REPO:-https://github.com/madler/zlib}
-ZLIB_REF=${ZLIB_REF:-v1.3.1}
+ZLIB_REF=${ZLIB_REF:-v1.4}
 ZNG_REPO=${ZNG_REPO:-https://github.com/zlib-ng/zlib-ng}
 ZNG_REF=${ZNG_REF:-2.3.3}
 ISAL_REPO=${ISAL_REPO:-https://github.com/intel/isa-l}
@@ -40,11 +43,11 @@ echo "== zlib (z_ prefix) =="
 	make -j"$JOBS" libz.a >/dev/null)
 
 echo "== zlib-ng (native API) =="
-cmake -S "$WORK/zlib-ng" -B "$WORK/zlib-ng/build" -DCMAKE_BUILD_TYPE=Release \
-	-DZLIB_COMPAT=OFF -DBUILD_SHARED_LIBS=OFF -DZLIB_ENABLE_TESTS=OFF \
-	-DZLIBNG_ENABLE_TESTS=OFF -DWITH_GTEST=OFF >"$WORK/zlib-ng-cmake.log"
+ZNG_ARGS=(-DCMAKE_BUILD_TYPE=Release -DZLIB_COMPAT=OFF -DBUILD_SHARED_LIBS=OFF
+	-DZLIB_ENABLE_TESTS=OFF -DZLIBNG_ENABLE_TESTS=OFF -DWITH_GTEST=OFF)
+cmake -S "$WORK/zlib-ng" -B "$WORK/zlib-ng/build" "${ZNG_ARGS[@]}" >"$WORK/zlib-ng-cmake.log"
 cmake --build "$WORK/zlib-ng/build" -j"$JOBS" >/dev/null
-grep -i -E "Architecture|supported|NEON|CRC|PMULL|AVX|SSE|native" "$WORK/zlib-ng-cmake.log" | sed 's/^/  /' | head -40 || true
+grep -E "Architecture-specific source files" "$WORK/zlib-ng-cmake.log" | sed 's/^/  /' || true
 
 echo "== ISA-L =="
 # Makefile.unx does not recognise "arm64" (macOS) and would build the portable
@@ -66,18 +69,20 @@ cmake --build "$WORK/libdeflate/build" -j"$JOBS" >/dev/null
 
 echo "== benchmark =="
 OBJ=$WORK/obj
+rm -rf "$OBJ"
 mkdir -p "$OBJ"
 CFLAGS="-O2 -std=c11 -Wall -Wextra -I$ROOT/src"
 isal_ver="${ISAL_REF#v} ($(git -C "$WORK/isa-l" rev-parse --short HEAD))"
 $CC $CFLAGS -c "$ROOT/src/main.c" -o "$OBJ/main.o"
 $CC $CFLAGS -c "$ROOT/src/be_syszlib.c" -o "$OBJ/be_syszlib.o"
 $CC $CFLAGS -I"$WORK/zlib" -DZ_PREFIX -c "$ROOT/src/be_madler.c" -o "$OBJ/be_madler.o"
-$CC $CFLAGS -I"$WORK/zlib-ng/build" -I"$WORK/zlib-ng" -c "$ROOT/src/be_zng.c" -o "$OBJ/be_zng.o"
+$CC $CFLAGS -Wno-deprecated-declarations -I"$WORK/zlib-ng/build" -I"$WORK/zlib-ng" \
+	-DZNG_NAME="\"zlib-ng @$ZNG_REF\"" -c "$ROOT/src/be_zng.c" -o "$OBJ/be_zng.o"
 $CC $CFLAGS -I"$WORK/isa-l/include" -DISAL_VERSION_STR="\"$isal_ver\"" -c "$ROOT/src/be_isal.c" -o "$OBJ/be_isal.o"
 $CC $CFLAGS -I"$WORK/libdeflate" -c "$ROOT/src/be_libdeflate.c" -o "$OBJ/be_libdeflate.o"
 $CC $CFLAGS -c "$ROOT/src/be_apple_compression.c" -o "$OBJ/be_apple_compression.o"
 LIBS="-lz"
 [ "$(uname -s)" = Darwin ] && LIBS="$LIBS -lcompression"
-$CC -o "$ROOT/bench" "$OBJ"/*.o "$WORK/zlib/libz.a" "$WORK/zlib-ng/build/libz-ng.a" \
+$CC -o "$OUT" "$OBJ"/*.o "$WORK/zlib/libz.a" "$WORK/zlib-ng/build/libz-ng.a" \
 	"$ISAL_LIB" "$WORK/libdeflate/build/libdeflate.a" $LIBS
-echo "built $ROOT/bench"
+echo "built $OUT"
