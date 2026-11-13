@@ -32,6 +32,19 @@ jobs:
       run: bash build.sh
     - name: Build again with zlib-ng develop
       run: ZNG_REF=develop WORK=$PWD/work-zng-dev OUT=$PWD/bench-zng-dev bash build.sh
+    - name: Build again with ISA-L master
+      continue-on-error: true
+      run: ISAL_REF=master WORK=$PWD/work-isal-master OUT=$PWD/bench-isal-master bash build.sh
+    - name: Build again with intel/isa-l#465 (aarch64 inflate fast path)
+      continue-on-error: true
+      run: >-
+        ISAL_REPO=https://github.com/ptweezy/isa-l ISAL_REF=igzip-aarch64-inflate-fast-path
+        WORK=$PWD/work-isal-465 OUT=$PWD/bench-isal-465 bash build.sh
+    - name: Build again with the c0-infl stack
+      continue-on-error: true
+      run: >-
+        ISAL_REPO=https://github.com/ptweezy/isa-l ISAL_REF=c0-infl
+        WORK=$PWD/work-isal-c0 OUT=$PWD/bench-isal-c0 bash build.sh
     - uses: actions/cache@v4
       with:
         path: corpus
@@ -42,6 +55,16 @@ jobs:
       run: ./bench --max-mb 256 --dump corpus corpus/SRR2589044_1.fastq corpus/silesia.cat
     - name: Native benchmark, zlib-ng develop (system zlib repeated as a control)
       run: ./bench-zng-dev --max-mb 256 --only "zlib-ng,system zlib" corpus/SRR2589044_1.fastq corpus/silesia.cat
+    - name: Native benchmark, ISA-L variants (system zlib repeated as a control)
+      run: |
+        for v in master 465 c0; do
+          if [ -x ./bench-isal-$v ]; then
+            echo "#### ISA-L variant: $v"
+            ./bench-isal-$v --max-mb 256 --only "ISA-L,system zlib" corpus/SRR2589044_1.fastq corpus/silesia.cat
+          else
+            echo "#### ISA-L variant $v did not build"
+          fi
+        done
     - uses: actions/setup-python@v5
       with:
         python-version: "3.14"
